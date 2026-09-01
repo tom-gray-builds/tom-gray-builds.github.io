@@ -36,22 +36,29 @@
     background-color: var(--paper);
   }
 
-  /* 3 x 3 grid of 1px lines filling the whole page */
+  /* 3 x 3 grid: only the two interior lines on each axis, no edges */
   .grid {
     position: fixed;
     inset: 0;
     z-index: 0;
     --w: 4px;
+    --h: calc(var(--w) / 2);
     background-image:
-      repeating-linear-gradient(
+      linear-gradient(
         to right,
-        var(--line) 0 var(--w),
-        transparent var(--w) calc(100% / 3)
+        transparent calc(100% / 3 - var(--h)),
+        var(--line) calc(100% / 3 - var(--h)) calc(100% / 3 + var(--h)),
+        transparent calc(100% / 3 + var(--h)) calc(200% / 3 - var(--h)),
+        var(--line) calc(200% / 3 - var(--h)) calc(200% / 3 + var(--h)),
+        transparent calc(200% / 3 + var(--h))
       ),
-      repeating-linear-gradient(
+      linear-gradient(
         to bottom,
-        var(--line) 0 var(--w),
-        transparent var(--w) calc(100% / 3)
+        transparent calc(100% / 3 - var(--h)),
+        var(--line) calc(100% / 3 - var(--h)) calc(100% / 3 + var(--h)),
+        transparent calc(100% / 3 + var(--h)) calc(200% / 3 - var(--h)),
+        var(--line) calc(200% / 3 - var(--h)) calc(200% / 3 + var(--h)),
+        transparent calc(200% / 3 + var(--h))
       );
     /* same blown-out tattoo ink treatment as the name */
     filter: url(#blowout-grid) blur(0.4px)
