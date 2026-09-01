@@ -1,15 +1,117 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tom Gray</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>tom gray</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Pirata+One&family=IM+Fell+English:ital@0;1&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  :root {
+    --ink: #20222f;
+    --line: rgba(20, 20, 25, 0.28);
+    --paper: #f4f1ea;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background-color: var(--paper);
+    /* 5 x 5 grid of 1px lines filling the whole page */
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        var(--line) 0 1px,
+        transparent 1px calc(100% / 3)
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        var(--line) 0 1px,
+        transparent 1px calc(100% / 3)
+      );
+    background-position: 0 0;
+    /* draw the trailing edge lines too */
+    box-shadow: inset -1px -1px 0 var(--line);
+  }
+
+  .name {
+    position: relative;
+    font-family: "Pirata One", "IM Fell English", serif;
+    /* stays within the middle cell of the 3x3 grid (~1/3 of the viewport) */
+    font-size: clamp(1.75rem, 6.5vw, 6rem);
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: 0.03em;
+    text-transform: lowercase;
+    white-space: nowrap;
+    user-select: none;
+
+    /* old, slightly blown-out tattoo ink */
+    filter: url(#blowout) blur(0.6px) saturate(0.8);
+    text-shadow:
+      0 0 1px rgba(32, 34, 47, 0.9),
+      0 0 4px rgba(58, 74, 90, 0.55),
+      0 0 12px rgba(58, 74, 90, 0.28),
+      1px 1px 0 rgba(58, 74, 90, 0.35),
+      -1px 0 0 rgba(58, 74, 90, 0.3);
+    -webkit-text-stroke: 0.4px rgba(32, 34, 47, 0.35);
+  }
+
+  .name::before {
+    content: "tom gray";
+    position: absolute;
+    inset: 0;
+    color: rgba(60, 90, 100, 0.35);
+    filter: blur(4px);
+    z-index: -1;
+  }
+</style>
 </head>
 <body>
-  <main>
-    <h1>Tom Gray</h1>
-    <p>This site is under construction.</p>
-  </main>
+  <h1 class="name">tom gray</h1>
+
+  <!-- roughen + spread the letter edges like ink bled under skin -->
+  <svg width="0" height="0" style="position: absolute">
+    <filter id="blowout">
+      <feTurbulence
+        type="fractalNoise"
+        baseFrequency="0.012 0.018"
+        numOctaves="2"
+        seed="7"
+        result="noise"
+      />
+      <feDisplacementMap
+        in="SourceGraphic"
+        in2="noise"
+        scale="6"
+        xChannelSelector="R"
+        yChannelSelector="G"
+        result="displaced"
+      />
+      <feGaussianBlur in="displaced" stdDeviation="0.5" result="soft" />
+      <feMorphology in="soft" operator="dilate" radius="0.4" result="spread" />
+      <feMerge>
+        <feMergeNode in="spread" />
+        <feMergeNode in="soft" />
+      </feMerge>
+    </filter>
+  </svg>
 </body>
 </html>
