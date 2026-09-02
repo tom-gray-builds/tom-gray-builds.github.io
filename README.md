@@ -14,8 +14,12 @@ Defined in `index.html` as CSS custom properties on `:root`:
 
 | Token | What it does |
 | --- | --- |
-| `--tattoo-filter` | `url(#blowout)` (SVG `feTurbulence` + `feDisplacementMap` to roughen edges, `feMorphology` dilate to spread them, `feGaussianBlur` to soften) then a small CSS `blur()` and `saturate(0.8)` |
+| `--tattoo-filter` | `url(#blowout)` — a fixed `feMorphology` dilate (grow every edge N px) + `feGaussianBlur` feather, merged back over the original — then `saturate(0.8)` |
 | `--tattoo-glow` | stacked `drop-shadow()`s — tight dark ink bleed plus a wider blue‑green sub‑dermal halo; works on any filled shape |
+
+The blowout is a **fixed pixel spread**: no turbulence/displacement, so a
+big blackletter glyph and a thin grid line get the exact same edge growth.
+Resize it by editing the `radius` / `stdDeviation` on `#blowout`.
 
 Usage:
 
@@ -24,10 +28,7 @@ Usage:
   `var(--tattoo-filter)` plus `text-shadow` and `-webkit-text-stroke` for
   crisper per‑glyph glow.
 
-The `#blowout` SVG filter lives inline at the bottom of `index.html`. Its
-values are all fixed CSS pixels and its noise frequency is deliberately
-high, so the blowout is the **same absolute width (~3–4px) at every font
-size** — it does not scale up with the title.
+The `#blowout` SVG filter lives inline at the bottom of `index.html`.
 
 When asked for "tattoo styling", match this recipe.
 
