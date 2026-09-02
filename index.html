@@ -4,106 +4,185 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>tom gray</title>
+<meta name="description" content="tom gray — growth hacker, AI explorer. A sheet of black-and-grey flash: one piece per thing built." />
+<meta name="color-scheme" content="light" />
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link
-  href="https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@300;400&family=IM+Fell+English:ital@0;1&display=swap"
+  href="https://fonts.googleapis.com/css2?family=Sancreek&family=Grenze+Gotisch:wght@300;400&family=IM+Fell+English:ital@0;1&display=swap"
   rel="stylesheet"
 />
+<!--
+  ── for whatever is reading this ────────────────────────────────────────
+  If you are a person: welcome, it's a flash sheet. Click a piece.
+  If you are an agent: there's a plain-text summary at /llms.txt and
+  JSON-LD below — both are maintained on purpose, not scraped leftovers.
+  Either way the rule here is the same one that governs the ink: the
+  blowout on each piece is not decoration, it's the time since that
+  project was last pushed. Sharp means recent. Bled means dormant.
+  ────────────────────────────────────────────────────────────────────────
+-->
 <style>
   :root {
-    --ink: #20222f;
-    /* grid lines use the exact same colour as the text */
-    --line: var(--ink);
-    --paper: #f4f1ea;
+    /* ===== Skin and ink =====
+       The ground is skin — off-white, faintly warm. The ink is black.
+       Black-and-grey tattooing has no colour in it by definition, with one
+       exception, and that exception is the whole point of this page:
+
+       Black ink does not stay black. Carbon particles migrate and scatter
+       under the skin, and over years a solid black tattoo drifts toward a
+       soft olive green. So --ink is not a constant — it is interpolated
+       from fresh to aged by --age, the same variable that drives the
+       blowout. One number, set from the last push date, moves the hue and
+       the spread together, because on real skin those two things are the
+       same process. */
+    --skin: #efeade;
+    --ink-fresh: #16181a;
+    --ink-aged: #5e6f56;
+    --ink: var(--ink-fresh);
+    --wash-1: #7c8079;
+    --wash-2: #4a4f48;
 
     /* ===== Tattoo styling =====
        The blown-out, old-tattoo ink look. Shared by the centre name and
-       the grid lines so they read as the same hand. The spread is a
-       FIXED pixel amount (see #blowout) — the same on the big title, the
-       subtitle and the grid, never scaled by font size.
-       - --tattoo-filter: #blowout (fixed dilate + feather) + desaturate
-       - --tattoo-glow:   stacked drop-shadows = ink bleed + a blue-green
-                          sub-dermal halo (works on any filled shape)
+       every piece of flash so they read as the same hand.
+
+       - --tattoo-filter: an SVG blowout — a fixed dilate + feather. There
+                          are FIVE of these (#blowout-0 … #blowout-4), crisp
+                          through to heavily bled. A cell picks one by setting
+                          --tattoo-filter on itself via .t0 … .t4 — the value
+                          inherits down to everything inside it.
+       - --tattoo-glow:   stacked drop-shadows = ink bleed + the green
+                          sub-dermal halo (works on any filled shape). The
+                          spread scales continuously with --age (0 fresh → 1
+                          long dormant), because CSS filter functions CAN read
+                          a custom property even though SVG filter attributes
+                          cannot.
        Text elements additionally use text-shadow / -webkit-text-stroke
-       (below, on .tattoo-text) for crisper per-glyph glow. */
-    --tattoo-filter: url(#blowout) saturate(0.8);
+       (below, on .tattoo-text) for crisper per-glyph glow.
+
+       The halo is a sub-dermal green that strengthens with --age: fresh
+       ink barely hazes, old ink sits in a soft green bloom under the
+       surface. Each #blowout filter also dims its own spread
+       (feComponentTransfer, slope 0.55) so the bleed stays weaker than
+       the line it came off, the way a real blowout does. */
+    --age: 0;
+    --tattoo-filter: url(#blowout-2);
     --tattoo-glow:
-      drop-shadow(0 0 1px rgba(32, 34, 47, 0.9))
-      drop-shadow(0 0 4px rgba(58, 74, 90, 0.5))
-      drop-shadow(0 0 12px rgba(58, 74, 90, 0.25))
-      drop-shadow(1px 1px 0 rgba(58, 74, 90, 0.32))
-      drop-shadow(0 0 6px rgba(60, 90, 100, 0.35));
+      drop-shadow(0 0 1px rgba(22, 24, 26, 0.3))
+      drop-shadow(0 0 calc(2px + var(--age) * 4px) rgba(84, 104, 76, calc(0.16 + var(--age) * 0.24)))
+      drop-shadow(0 0 calc(6px + var(--age) * 12px) rgba(94, 111, 86, calc(0.08 + var(--age) * 0.2)))
+      drop-shadow(1px 1px 0 rgba(70, 88, 66, 0.22));
+
+    /* how far the sheet scales when you lean into a single piece */
+    --zoom: 2.6;
   }
 
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+  /* Age tiers: crisp dense black through to spread, faded, green.
+     --age is the only knob — it feeds the blowout filter, the ink colour
+     and the halo at once. No desaturate here: that was for the dark
+     version, and on cream it would wash the green back out of old ink. */
+  .t0 { --tattoo-filter: url(#blowout-0); --age: 0.00; }
+  .t1 { --tattoo-filter: url(#blowout-1); --age: 0.25; }
+  .t2 { --tattoo-filter: url(#blowout-2); --age: 0.50; }
+  .t3 { --tattoo-filter: url(#blowout-3); --age: 0.75; }
+  .t4 { --tattoo-filter: url(#blowout-4); --age: 1.00; }
+
+  /* --ink has to be declared on the SAME element that sets --age. A custom
+     property is substituted where it is declared and descendants inherit the
+     already-substituted value — so an --ink written once on :root would bake
+     in :root's --age of 0 and every piece would stay black forever. */
+  .t0, .t1, .t2, .t3, .t4, .slot {
+    --ink: color-mix(in oklab, var(--ink-aged) calc(var(--age) * 100%), var(--ink-fresh));
   }
 
-  html,
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
   body {
-    height: 100%;
+    /* the sheet has edges. there is nothing below the fold because there
+       is no fold. */
+    overflow: hidden;
+    background-color: var(--skin);
+    color: var(--ink);
+    font-family: "IM Fell English", serif;
+    -webkit-font-smoothing: antialiased;
   }
 
-  body {
+  /* ── the sheet ─────────────────────────────────────────────────────
+     Everything that is *drawn on* the sheet lives in here, so that
+     zooming is a single transform on one element. Note this makes .sheet
+     a containing block for fixed descendants — the surface layers and
+     the reader are deliberately siblings, not children. */
+  .sheet {
+    position: fixed;
+    inset: 0;
+    transform-origin: 0 0;
+    transform: translate(0, 0) scale(1);
+    transition: transform 0.72s cubic-bezier(0.2, 0.7, 0.2, 1);
+    will-change: transform;
+  }
+
+  /* No ruled lines. A flash sheet is held together by the spacing between
+     the pieces, not by a drawn grid — the ink is the only structure. The
+     3x3 arrangement survives as invisible placement.
+
+     The centre COLUMN is one tall piece (the name plate + the three hearts),
+     so cells 2, 5 and 8 are gone. Project cells are 1, 3, 4, 6, 7, 9 — six
+     slots, and those numbers still mean the same grid positions they always
+     did, so projects.json needs no migration. */
+  .cells {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1.08fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
+  }
+
+  .cell {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
-    background-color: var(--paper);
-  }
-
-  /* 3 x 3 grid: only the two interior lines on each axis, no edges */
-  .grid {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    --w: 4px;
-    --h: calc(var(--w) / 2);
-    background-image:
-      linear-gradient(
-        to right,
-        transparent calc(100% / 3 - var(--h)),
-        var(--line) calc(100% / 3 - var(--h)) calc(100% / 3 + var(--h)),
-        transparent calc(100% / 3 + var(--h)) calc(200% / 3 - var(--h)),
-        var(--line) calc(200% / 3 - var(--h)) calc(200% / 3 + var(--h)),
-        transparent calc(200% / 3 + var(--h))
-      ),
-      linear-gradient(
-        to bottom,
-        transparent calc(100% / 3 - var(--h)),
-        var(--line) calc(100% / 3 - var(--h)) calc(100% / 3 + var(--h)),
-        transparent calc(100% / 3 + var(--h)) calc(200% / 3 - var(--h)),
-        var(--line) calc(200% / 3 - var(--h)) calc(200% / 3 + var(--h)),
-        transparent calc(200% / 3 + var(--h))
-      );
-    /* tattoo styling — identical to the centre name */
-    filter: var(--tattoo-filter) var(--tattoo-glow);
+    min-width: 0;
+    min-height: 0;
+    transition: opacity 0.5s ease;
   }
 
   /* text form of the tattoo styling: SVG blowout + ink-bleed glow + stroke */
   .tattoo-text {
     filter: var(--tattoo-filter);
     text-shadow:
-      0 0 1px rgba(32, 34, 47, 0.9),
-      0 0 4px rgba(58, 74, 90, 0.55),
-      0 0 12px rgba(58, 74, 90, 0.28),
-      1px 1px 0 rgba(58, 74, 90, 0.35),
-      -1px 0 0 rgba(58, 74, 90, 0.3);
-    -webkit-text-stroke: 0.4px rgba(32, 34, 47, 0.35);
+      0 0 1px rgba(22, 24, 26, 0.45),
+      0 0 calc(2px + var(--age) * 3px) rgba(84, 104, 76, calc(0.28 + var(--age) * 0.3)),
+      0 0 calc(4px + var(--age) * 9px) rgba(94, 111, 86, calc(0.09 + var(--age) * 0.26)),
+      1px 1px 0 rgba(70, 88, 66, 0.3),
+      -1px 0 0 rgba(70, 88, 66, 0.24);
+    -webkit-text-stroke: 0.4px rgba(22, 24, 26, 0.25);
   }
 
-  /* name + subtitle, stacked in the middle cell of the 3x3 grid */
-  .plate {
+  /* ── the name plate — the whole centre column ─────────────────────
+     Name at the top, three hearts beneath it carrying the subtitle. Pinned
+     to tier 0: this is identity, not data, so it must not drift green with
+     the projects. */
+  .plate-col {
+    grid-column: 2;
+    grid-row: 1 / 4;
     position: relative;
     z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: clamp(0.9rem, 3vw, 2rem);
+    justify-content: flex-start;
+    gap: clamp(0.4rem, 1.4vh, 1.1rem);
+    padding: clamp(0.75rem, 3vh, 2.2rem) 2% clamp(0.5rem, 2vh, 1.5rem);
+    min-height: 0;
+    min-width: 0;
     user-select: none;
+    transition: opacity 0.5s ease;
   }
 
   .name {
@@ -111,86 +190,1170 @@
     /* lighter blackletter — thinner strokes so the ink blowout stays crisp */
     font-family: "Grenze Gotisch", "IM Fell English", serif;
     font-weight: 300;
-    /* roughly fills the middle cell (~1/3 of the viewport) */
-    font-size: clamp(2.4rem, 8.5vw, 8rem);
+    font-size: clamp(1.7rem, 5.4vw, 4.6rem);
     line-height: 1;
     color: var(--ink);
     letter-spacing: 0.03em;
     text-transform: lowercase;
     white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  /* ── the three hearts ─────────────────────────────────────────────
+     The subtitle, carried on banners instead of set as a line of type.
+     Sized to whatever height is left under the name so the sheet never
+     scrolls, which is why it is flex:1 with min-height:0. */
+  .hearts {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow: visible;
+    filter: var(--tattoo-filter) var(--tattoo-glow);
+  }
+
+  /* Flat tones, not gradients. Traditional flash shades in blocks of solid
+     value that follow the form — a smooth ramp reads as digital airbrush and
+     is the single thing that most gives away a drawn-in-code tattoo. */
+  /* The value order is what sells it. In the reference the heart body is the
+     DARKEST thing on the sheet and the rim band is nearly paper — that hard
+     light/dark step around the beading is the whole effect. Leaves and petals
+     sit in the middle so they read behind the hearts, not on top of them. */
+  .hearts {
+    --t1: #dedacd;  /* rim band, barely off the paper */
+    --t2: #b6b8ab;  /* petals */
+    --t3: #8b8f81;  /* leaves, banner underside */
+    --t4: #5b6053;  /* leaf shadow, lit side of the heart body */
+    --t5: #262a22;  /* heart body, shadow side */
+  }
+
+  .hearts .ink {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 3.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .hearts .ink-thin { fill: none; stroke: var(--ink); stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+
+  .hearts .rim { fill: var(--t1); }
+  .hearts .body { fill: var(--t5); }
+  .hearts .body-lit { fill: var(--t4); }
+
+  /* The beading sits INSIDE the rim band — between the outer outline and the
+     inner one — not inset on the heart itself. Dotted stroke on a copy of the
+     heart scaled to run up the middle of that band. */
+  .hearts .beads {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-dasharray: 0.001 9;
+  }
+
+  /* the banner is opaque — it passes IN FRONT of the heart */
+  .hearts .band { fill: var(--skin); stroke: var(--ink); stroke-width: 3.2; stroke-linejoin: round; }
+  .hearts .band-shade { fill: var(--t3); stroke: none; opacity: 0.55; }
+
+  .hearts .leaf { fill: var(--t3); stroke: none; }
+  .hearts .leaf-shade { fill: var(--t4); stroke: none; }
+  .hearts .stem { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; }
+  .hearts .petal { fill: var(--t2); stroke: none; }
+  .hearts .eye { fill: var(--t5); stroke: var(--ink); stroke-width: 1.8; }
+
+  .hearts .btext {
+    font-family: "Sancreek", "IM Fell English", serif;
+    fill: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
 
   .name::before {
     content: "tom gray";
     position: absolute;
     inset: 0;
-    color: rgba(60, 90, 100, 0.35);
-    filter: blur(4px);
+    /* the sub-dermal ghost — ink that has migrated further than the line.
+       Scales with --age so fresh ink barely has one. */
+    color: rgba(94, 111, 86, calc(0.12 + var(--age) * 0.34));
+    filter: blur(calc(3px + var(--age) * 5px));
     z-index: -1;
   }
 
-  .tagline {
-    font-family: "IM Fell English", "Pirata One", serif;
-    font-style: italic;
-    font-size: clamp(0.9rem, 2.6vw, 1.85rem);
-    line-height: 1;
-    letter-spacing: 0.14em;
-    text-transform: lowercase;
-    color: var(--ink);
-    white-space: nowrap;
+  /* ── a piece of flash ──────────────────────────────────────────────── */
+  .piece {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4em;
+    width: 100%;
+    height: 100%;
+    padding: 6%;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    outline: none;
   }
 
-  .tagline .sep {
-    opacity: 0.55;
-    padding: 0 0.3em;
-    font-style: normal;
+  .piece .num {
+    position: absolute;
+    top: 9%;
+    left: 11%;
+    font-size: min(1.5vw, 2.4vh);
+    letter-spacing: 0.22em;
+    opacity: 0.5;
+    font-variant: small-caps;
+  }
+
+  .sigil {
+    width: min(17vw, 29vh);
+    height: min(17vw, 29vh);
+    overflow: visible;
+    filter: var(--tattoo-filter) var(--tattoo-glow);
+  }
+
+  /* traditional flash is defined by its outline: bold, even, unbroken.
+     Thin lines read as clip art, not as something a machine could hold. */
+  .sigil .line { fill: none; stroke: var(--ink); stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+  .sigil .thin { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; opacity: 0.75; }
+  .sigil .solid { fill: var(--ink); stroke: none; }
+  /* the grey in black-and-grey: flat mid-tone mass inside the outline */
+  .sigil .shade { fill: url(#shade-grad); stroke: none; }
+  /* grey wash + stipple — the two shading techniques that define
+     black-and-grey work. Both sit behind the linework. The wash takes a
+     radial gradient rather than a flat fill: a flat ellipse reads as a
+     smudge with an edge, and grey wash has no edge. */
+  .sigil .wash { fill: url(#wash-grad); }
+  .sigil .stipple { fill: var(--wash-1); opacity: 0.22; }
+
+  /* the banner: outlined ribbon with the title inside it.
+     The filter goes on the SVG only — running a 1px dilate over 16px
+     small-caps turns it to mush, so the text sits outside it and takes a
+     text-shadow instead. */
+  .ribbon-wrap {
+    position: relative;
+    width: 84%;
+    max-width: min(21vw, 32vh);
+  }
+
+  .ribbon {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    filter: var(--tattoo-filter) var(--tattoo-glow);
+  }
+
+  .ribbon path { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+
+  .ribbon-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: min(1.25vw, 1.95vh);
+    letter-spacing: 0.1em;
+    font-variant: small-caps;
+    text-transform: lowercase;
+    white-space: nowrap;
+    padding: 0 16%;
+    pointer-events: none;
+    color: var(--ink);
+    text-shadow: 0 0 calc(2px + var(--age) * 3px) rgba(84, 104, 76, calc(0.25 + var(--age) * 0.3));
+  }
+
+  /* ── an empty slot ─────────────────────────────────────────────────
+     Pencil stencil, never inked. The sheet has room for more work —
+     said with drawing rather than with copy. */
+  .slot { opacity: 0.2; --age: 0.5; }
+  .slot .sigil { filter: none; }
+  .slot .sigil .line,
+  .slot .sigil .thin { stroke-width: 1.9; stroke-dasharray: 4 4.5; }
+  .slot .sigil .solid { fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-dasharray: 4 4.5; }
+  .slot .sigil .wash,
+  .slot .sigil .shade,
+  .slot .sigil .stipple { display: none; }
+
+  /* ── surface layers (outside .sheet so the zoom doesn't move them) ── */
+  .grain, .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  /* ink sits IN this surface, not on it. multiply, not overlay: on a light
+     ground the grain has to sit down into the paper as tooth, not lift off
+     it as sparkle. */
+  .grain {
+    opacity: 0.13;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+  }
+
+  /* aged sheet edges: warm and dirty, the way paper goes at the margins —
+     not a dark vignette, which would read as a photograph of the page */
+  .vignette {
+    background: radial-gradient(ellipse 82% 82% at 50% 46%, transparent 45%, rgba(118, 102, 72, 0.2) 100%);
+    mix-blend-mode: multiply;
+  }
+
+  /* ── zoomed state ──────────────────────────────────────────────────
+     Navigation by depth, not by length. The sheet is a plane you lean
+     into; the piece grows, everything else recedes. */
+  /* the plate column has to recede too — it is not a .cell, and at 2.6x its
+     banner tails reach into frame behind the zoomed piece */
+  body.zoomed .cell:not(.active),
+  body.zoomed .plate-col { opacity: 0.1; }
+
+  /* The sheet scales by --zoom, and drop-shadow radii scale with it — so a
+     halo tuned at sheet size blooms into neon at piece size. Divide it back
+     down. The age relationship is preserved, just at the new scale. */
+  body.zoomed .cell.active {
+    --tattoo-glow:
+      drop-shadow(0 0 0.4px rgba(22, 24, 26, 0.3))
+      drop-shadow(0 0 calc(0.8px + var(--age) * 1.6px) rgba(84, 104, 76, calc(0.16 + var(--age) * 0.24)))
+      drop-shadow(0 0 calc(2.3px + var(--age) * 4.6px) rgba(94, 111, 86, calc(0.08 + var(--age) * 0.2)))
+      drop-shadow(0.4px 0.4px 0 rgba(70, 88, 66, 0.2));
+  }
+  body.zoomed .vignette { background: radial-gradient(ellipse 90% 90% at 50% 46%, transparent 30%, rgba(0, 0, 0, 0.8) 100%); }
+
+  /* ── the reader — legible chrome over the zoomed piece ─────────────
+     Lives outside the scaled sheet, so nothing needs counter-scaling. */
+  .reader {
+    position: fixed;
+    z-index: 10;
+    left: clamp(1.25rem, 5vw, 5rem);
+    bottom: clamp(1.25rem, 5vh, 4rem);
+    max-width: min(30rem, 78vw);
+    opacity: 0;
+    transform: translateY(0.75rem);
+    pointer-events: none;
+    transition: opacity 0.4s ease 0.25s, transform 0.5s ease 0.25s;
+  }
+
+  /* focus is moved here programmatically on open, so the browser's ring
+     would appear without anyone having reached for the keyboard */
+  .reader:focus { outline: none; }
+
+  /* a scrim, so the reader stays legible over whatever it lands on */
+  .reader::before {
+    content: "";
+    position: absolute;
+    inset: -3rem -6rem -3.5rem -4rem;
+    z-index: -1;
+    background: radial-gradient(
+      ellipse at 32% 58%,
+      rgba(239, 234, 222, 0.96) 0%,
+      rgba(239, 234, 222, 0.88) 45%,
+      transparent 76%
+    );
+  }
+
+  body.zoomed .reader { opacity: 1; transform: none; pointer-events: auto; }
+
+  .reader h2 {
+    font-family: "Grenze Gotisch", serif;
+    font-weight: 300;
+    font-size: clamp(1.9rem, 5vw, 3.2rem);
+    line-height: 1;
+    text-transform: lowercase;
+    margin-bottom: 0.5rem;
+  }
+
+  .reader p {
+    font-style: italic;
+    font-size: clamp(0.95rem, 1.6vw, 1.15rem);
+    line-height: 1.45;
+    opacity: 0.82;
+    margin-bottom: 0.9rem;
+  }
+
+  .reader dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.4rem;
+    font-size: clamp(0.78rem, 1.2vw, 0.92rem);
+    font-variant: small-caps;
+    letter-spacing: 0.1em;
+    opacity: 0.62;
+    margin-bottom: 1rem;
+  }
+
+  .reader dt { display: inline; opacity: 0.6; }
+  .reader dt::after { content: " "; }
+  .reader dd { display: inline; }
+  .reader dl > div { white-space: nowrap; }
+
+  .reader .out {
+    display: inline-block;
+    color: var(--ink);
+    text-decoration: none;
+    font-variant: small-caps;
+    letter-spacing: 0.14em;
+    border-bottom: 1px solid rgba(22, 24, 26, 0.35);
+    padding-bottom: 0.15rem;
+  }
+
+  .reader .out:hover, .reader .out:focus-visible { border-bottom-color: var(--ink); }
+  .reader .locked { font-variant: small-caps; letter-spacing: 0.14em; opacity: 0.45; }
+
+  .dismiss {
+    position: fixed;
+    z-index: 10;
+    top: clamp(1rem, 4vh, 2.5rem);
+    right: clamp(1rem, 4vw, 3rem);
+    font-variant: small-caps;
+    letter-spacing: 0.18em;
+    font-size: 0.8rem;
+    opacity: 0;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+    pointer-events: none;
+    transition: opacity 0.4s ease 0.25s;
+  }
+
+  body.zoomed .dismiss { opacity: 0.5; pointer-events: auto; }
+  .dismiss:hover, .dismiss:focus-visible { opacity: 1; }
+
+  /* keyboard users get a stencil outline, not a browser ring */
+  .piece:focus-visible { outline: 1px dashed rgba(22, 24, 26, 0.45); outline-offset: -10px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet, .cell, .plate-col, .reader, .dismiss { transition: none; }
+  }
+
+  /* Narrow portrait: the sheet stays a sheet. The centre column takes a much
+     bigger share, because the hearts are sized by the column's WIDTH — at an
+     even third of a phone screen the piece shrinks to a stamp with empty
+     space above and below it, while the outer columns have height to spare. */
+  @media (max-width: 640px) {
+    .cells { grid-template-columns: 0.62fr 1.76fr 0.62fr; }
+    .sigil { width: min(17vw, 13vh); height: min(17vw, 13vh); }
+    .piece .num { font-size: 2.6vw; }
+    .ribbon-text { font-size: 2.2vw; }
+    .ribbon-wrap { max-width: 92%; }
+    .plate-col { padding-left: 0; padding-right: 0; }
   }
 </style>
 </head>
 <body>
-  <div class="grid"></div>
-
-  <div class="plate">
-    <h1 class="name tattoo-text">tom gray</h1>
-    <p class="tagline tattoo-text">
-      Growth hacker<span class="sep">//</span>AI explorer
-    </p>
+  <div class="sheet" id="sheet">
+    <div class="cells" id="cells"></div>
   </div>
 
-  <svg width="0" height="0" style="position: absolute">
-    <!--
-      Ink blowout = a HARD, FIXED spread, identical for every element it
-      touches (big title, subtitle, grid lines) and independent of font
-      size. No feTurbulence/feDisplacementMap: displacing a big, thick,
-      intricate blackletter glyph smears its features together and reads
-      as a huge blowout, while the same displacement on small text or
-      thin lines barely shows. So the effect is now just:
-        feMorphology dilate radius -> grow every ink edge outward by
-                                      exactly N px (same at any size)
-        feGaussianBlur stdDeviation -> feather that spread by a fixed px
-      Both are plain pixel values: change them here to resize the
-      blowout for the whole site at once.
-    -->
-    <filter
-      id="blowout"
-      x="-20%"
-      y="-20%"
-      width="140%"
-      height="140%"
-      primitiveUnits="userSpaceOnUse"
-    >
-      <feMorphology
-        in="SourceGraphic"
-        operator="dilate"
-        radius="1"
-        result="spread"
-      />
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <button class="dismiss" id="dismiss" type="button">esc — back to the sheet</button>
+  <div class="reader" id="reader" tabindex="-1" aria-live="polite"></div>
+
+  <!--
+    Ink blowout = a HARD, FIXED spread, identical for every element it
+    touches and independent of font size. No feTurbulence/feDisplacementMap:
+    displacing a big, thick, intricate blackletter glyph smears its features
+    together and reads as a huge blowout, while the same displacement on
+    small text or thin lines barely shows. So the effect is just:
+      feMorphology dilate radius -> grow every ink edge outward by exactly
+                                    N px (same at any size)
+      feGaussianBlur stdDeviation -> feather that spread by a fixed px
+
+    There are five of them because SVG filter attributes cannot read CSS
+    custom properties — you cannot drive `radius` from var(--age). So the
+    age encoding is quantised into five tiers here, and the continuous half
+    of the spread lives in --tattoo-glow as CSS drop-shadows, which can.
+
+    tier 0 = pushed this week … tier 4 = untouched for over a year.
+  -->
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <!-- grey wash: a soft-shouldered blob with no hard edge anywhere -->
+    <radialGradient id="wash-grad">
+      <stop offset="0%" stop-color="#5f645d" stop-opacity="0.2" />
+      <stop offset="55%" stop-color="#5f645d" stop-opacity="0.09" />
+      <stop offset="100%" stop-color="#5f645d" stop-opacity="0" />
+    </radialGradient>
+    <!-- hearts carry more grey than the project sigils do: in the reference
+         sheets the heart is a dense solid with the beading reversed out of
+         it, so a light wash reads as an unfinished outline -->
+    <linearGradient id="heart-grad" x1="0.15" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#4c514a" stop-opacity="0.72" />
+      <stop offset="55%" stop-color="#3a3f38" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#23271f" stop-opacity="0.88" />
+    </linearGradient>
+    <!-- the grey: a smooth mid-tone ramp packed inside the linework -->
+    <linearGradient id="shade-grad" x1="0" y1="0" x2="0.65" y2="1">
+      <stop offset="0%" stop-color="#5a5f58" stop-opacity="0.42" />
+      <stop offset="60%" stop-color="#6d726a" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#3f443d" stop-opacity="0.5" />
+    </linearGradient>
+    <filter id="blowout-0" x="-25%" y="-25%" width="150%" height="150%" primitiveUnits="userSpaceOnUse">
+      <feMorphology in="SourceGraphic" operator="dilate" radius="0.35" result="spread" />
+      <feGaussianBlur in="spread" stdDeviation="0.4" result="soft" />
+      <feComponentTransfer in="soft" result="dim">
+        <feFuncA type="linear" slope="0.55" />
+      </feComponentTransfer>
+      <feMerge><feMergeNode in="dim" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+    <filter id="blowout-1" x="-25%" y="-25%" width="150%" height="150%" primitiveUnits="userSpaceOnUse">
+      <feMorphology in="SourceGraphic" operator="dilate" radius="0.7" result="spread" />
+      <feGaussianBlur in="spread" stdDeviation="0.75" result="soft" />
+      <feComponentTransfer in="soft" result="dim">
+        <feFuncA type="linear" slope="0.55" />
+      </feComponentTransfer>
+      <feMerge><feMergeNode in="dim" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+    <filter id="blowout-2" x="-25%" y="-25%" width="150%" height="150%" primitiveUnits="userSpaceOnUse">
+      <feMorphology in="SourceGraphic" operator="dilate" radius="1" result="spread" />
       <feGaussianBlur in="spread" stdDeviation="1" result="soft" />
-      <feMerge>
-        <feMergeNode in="soft" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
+      <feComponentTransfer in="soft" result="dim">
+        <feFuncA type="linear" slope="0.55" />
+      </feComponentTransfer>
+      <feMerge><feMergeNode in="dim" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+    <filter id="blowout-3" x="-30%" y="-30%" width="160%" height="160%" primitiveUnits="userSpaceOnUse">
+      <feMorphology in="SourceGraphic" operator="dilate" radius="1.55" result="spread" />
+      <feGaussianBlur in="spread" stdDeviation="1.7" result="soft" />
+      <feComponentTransfer in="soft" result="dim">
+        <feFuncA type="linear" slope="0.55" />
+      </feComponentTransfer>
+      <feMerge><feMergeNode in="dim" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+    <filter id="blowout-4" x="-35%" y="-35%" width="170%" height="170%" primitiveUnits="userSpaceOnUse">
+      <feMorphology in="SourceGraphic" operator="dilate" radius="2.3" result="spread" />
+      <feGaussianBlur in="spread" stdDeviation="2.6" result="soft" />
+      <feComponentTransfer in="soft" result="dim">
+        <feFuncA type="linear" slope="0.55" />
+      </feComponentTransfer>
+      <feMerge><feMergeNode in="dim" /><feMergeNode in="SourceGraphic" /></feMerge>
     </filter>
   </svg>
+
+  <!-- flash:start -->
+  <script type="application/json" id="flash-data">
+{"generated":"2026-09-02","pieces":[{"id":"smart-blinds","title":"smart blinds","banner":"Blinds that read the light and decide for themselves.","repo":"tom-gray-builds/smart-blinds","url":"https://github.com/tom-gray-builds/smart-blinds","motif":"auto","cell":1,"github":{"pushed_at":"2026-04-04T09:03:53Z","language":"JavaScript","stars":1}}]}
+  </script>
+  <!-- flash:end -->
+
+  <!-- jsonld:start -->
+  <script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ProfilePage","name":"tom gray","url":"https://tomgray.co.uk/","mainEntity":{"@type":"Person","name":"Tom Gray","url":"https://tomgray.co.uk/","description":"Growth hacker, AI explorer.","sameAs":["https://github.com/tom-gray-builds"]},"hasPart":[{"@type":"SoftwareSourceCode","name":"smart blinds","abstract":"Blinds that read the light and decide for themselves.","codeRepository":"https://github.com/tom-gray-builds/smart-blinds","programmingLanguage":"JavaScript","dateModified":"2026-04-04"}]}
+  </script>
+  <!-- jsonld:end -->
+
+<script>
+(() => {
+  "use strict";
+
+  /* ── seeded randomness ────────────────────────────────────────────
+     FNV-1a for the seed, xorshift32 for the stream. A project's mark is
+     a pure function of its id, so it never changes under it. */
+  const hash = (s) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h >>> 0;
+  };
+
+  const rng = (seed) => {
+    let s = seed >>> 0 || 1;
+    return () => {
+      s ^= s << 13; s >>>= 0;
+      s ^= s >>> 17;
+      s ^= s << 5;  s >>>= 0;
+      return s / 4294967296;
+    };
+  };
+
+  const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
+  const between = (r, a, b) => a + r() * (b - a);
+  const round = (n) => Math.round(n * 100) / 100;
+  const polar = (cx, cy, a, rad) => [round(cx + Math.cos(a) * rad), round(cy + Math.sin(a) * rad)];
+
+  /* ── the motif vocabulary ─────────────────────────────────────────
+     Rigid forms (dagger, swallow) are authored path data. Radial forms
+     (moon, rose) are built parametrically from the seed, so no two are
+     quite the same piece of flash. Add to this object to extend the
+     vocabulary; nothing else needs to change. */
+  const MOTIFS = {
+    dagger: () => [
+      // shade first — grey mass is laid under the outline, as it is on skin
+      { k: "shade", d: "M50 97 L40 56 L50 56 Z" },
+      { k: "shade", d: "M25 50 Q50 44 75 50 L75 57 Q50 63 25 57 Z" },
+      { k: "shade", d: "M44 50 L44 25 L50 25 L50 50 Z" },
+      { k: "line",  d: "M50 97 L40 56 L60 56 Z" },
+      { k: "thin",  d: "M50 93 L50 58" },
+      { k: "line",  d: "M25 50 Q50 44 75 50 L75 57 Q50 63 25 57 Z" },
+      { k: "line",  d: "M44 50 L44 25 L56 25 L56 50" },
+      { k: "thin",  d: "M44 45 L56 43 M44 39 L56 37 M44 33 L56 31" },
+      { k: "line",  d: "M50 25 m-8 -1 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0" },
+      { k: "solid", d: "M50 16 m-3 0 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0" }
+    ],
+    swallow: () => [
+      { k: "shade", d: "M46 42 C34 29 18 30 7 43 C22 41 33 46 43 53 Z" },
+      { k: "shade", d: "M54 42 C66 29 82 30 93 43 C78 41 67 46 57 53 Z" },
+      { k: "shade", d: "M45 57 L36 76 L50 66 L64 76 L55 57 Z" },
+      { k: "line",  d: "M46 42 C34 29 18 30 7 43 C22 41 33 46 43 53 Z" },
+      { k: "line",  d: "M54 42 C66 29 82 30 93 43 C78 41 67 46 57 53 Z" },
+      { k: "thin",  d: "M14 41 Q25 43 34 48 M20 46 Q29 48 36 52" },
+      { k: "thin",  d: "M86 41 Q75 43 66 48 M80 46 Q71 48 64 52" },
+      { k: "line",  d: "M43 53 Q50 60 57 53 Q56 40 50 33 Q44 40 43 53 Z" },
+      { k: "line",  d: "M45 57 L36 76 L50 66 L64 76 L55 57" },
+      { k: "solid", d: "M50 37 m-2 0 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0" }
+    ],
+    moon: (r) => {
+      // A crescent is the difference of two overlapping circles, drawn as
+      // two arcs meeting at their intersection points. Those points have to
+      // be solved for: hand-waving an inner arc whose radius is smaller than
+      // half the chord makes it geometrically impossible, and SVG's recovery
+      // rule is to silently inflate the radius until it fits — which turns
+      // the crescent back into a full disc.
+      const R = between(r, 30, 35);
+      const R2 = R * between(r, 0.84, 0.92);
+      const d = R * between(r, 0.36, 0.46);
+      const px = (d * d + R * R - R2 * R2) / (2 * d);
+      const py = Math.sqrt(Math.max(0, R * R - px * px));
+      const [ax, ay] = [round(50 + px), round(50 - py)];
+      const [bx, by] = [round(50 + px), round(50 + py)];
+      const crescent =
+        `M${ax} ${ay} A${round(R)} ${round(R)} 0 1 0 ${bx} ${by}`
+        + ` A${round(R2)} ${round(R2)} 0 1 1 ${ax} ${ay} Z`;
+      const parts = [{ k: "shade", d: crescent }, { k: "line", d: crescent }];
+      // one anchor star plus a seeded scatter of filler stars
+      parts.push({ k: "line", d: starPath(78, 30, between(r, 9, 13), 0.42, 5, -Math.PI / 2) });
+      const n = 2 + Math.floor(r() * 3);
+      for (let i = 0; i < n; i++) {
+        const a = between(r, -0.4, 1.9);
+        const [x, y] = polar(50, 50, a, between(r, 38, 47));
+        parts.push({ k: "thin", d: starPath(x, y, between(r, 3, 5.5), 0.38, 4, between(r, 0, 3.1)) });
+      }
+      return parts;
+    },
+    rose: (r) => {
+      const parts = [];
+      const lobes = [];
+      const petals = 5 + Math.floor(r() * 3);
+      const spin = between(r, 0, Math.PI * 2);
+      // outer lobes
+      for (let i = 0; i < petals; i++) {
+        const a = spin + (i / petals) * Math.PI * 2;
+        const len = between(r, 33, 41);
+        const wid = between(r, 0.42, 0.6);
+        const [tx, ty] = polar(50, 50, a, len);
+        const [lx, ly] = polar(50, 50, a - wid, len * 0.62);
+        const [rx, ry] = polar(50, 50, a + wid, len * 0.62);
+        lobes.push(`M50 50 Q${lx} ${ly} ${tx} ${ty} Q${rx} ${ry} 50 50 Z`);
+      }
+      // every other petal takes the grey, so the rose has a light side
+      lobes.forEach((d, i) => { if (i % 2 === 0) parts.push({ k: "shade", d }); });
+      lobes.forEach((d) => parts.push({ k: "line", d }));
+      // the bud: a spiral wound in from the outermost petal ring
+      const turns = between(r, 1.6, 2.3);
+      const steps = 44;
+      let d = "";
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const a = spin + t * turns * Math.PI * 2;
+        const [x, y] = polar(50, 50, a, 20 * (1 - t) + 2.5);
+        d += (i ? " L" : "M") + x + " " + y;
+      }
+      parts.push({ k: "line", d });
+      return parts;
+    },
+    eye: (r) => {
+      const lid = "M8 50 Q50 14 92 50 Q50 86 8 50 Z";
+      const parts = [
+        { k: "shade", d: lid },
+        { k: "line",  d: lid },
+        { k: "line",  d: "M50 50 m-19 0 a19 19 0 1 0 38 0 a19 19 0 1 0 -38 0" },
+        { k: "solid", d: "M50 50 m-9 0 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0" }
+      ];
+      // lashes / rays, seeded so no two eyes look at you the same way
+      const rays = 5 + Math.floor(r() * 4);
+      for (let i = 0; i < rays; i++) {
+        const a = -Math.PI + (i / (rays - 1)) * Math.PI;
+        const [x1, y1] = polar(50, 50, a, 40);
+        const [x2, y2] = polar(50, 50, a, between(r, 48, 58));
+        parts.push({ k: "thin", d: `M${x1} ${y1} L${x2} ${y2}` });
+      }
+      return parts;
+    },
+    hourglass: () => [
+      { k: "shade", d: "M30 26 L70 26 L50 50 Z" },
+      { k: "line",  d: "M30 26 L70 26 L50 50 L70 74 L30 74 L50 50 Z" },
+      { k: "line",  d: "M22 22 L78 22 M22 78 L78 78" },
+      { k: "thin",  d: "M36 68 Q50 62 64 68 L64 71 Q50 65 36 71 Z" },
+      { k: "thin",  d: "M50 50 L50 66" }
+    ]
+  };
+
+  const MOTIF_NAMES = Object.keys(MOTIFS);
+
+  /* ── what a piece is about, in old-school shorthand ───────────────
+     Traditional flash is a symbol vocabulary, not a decoration: a swallow
+     means you made it home, an hourglass means your time is running. So
+     `motif: "auto"` reads the project's own words and picks the form that
+     means the right thing. Only if nothing matches does it fall back to
+     the hash — a shape with no argument behind it is the last resort, not
+     the default. Pin a motif explicitly in projects.json to overrule this. */
+  const MEANINGS = [
+    ["moon",      ["light", "blind", "night", "dark", "lamp", "sleep", "shade", "ambient", "dim", "sun"]],
+    ["eye",       ["watch", "monitor", "observ", "detect", "vision", "see", "analytic", "track", "scan", "read"]],
+    ["hourglass", ["time", "schedul", "cron", "delay", "wait", "clock", "timer", "history", "log"]],
+    ["swallow",   ["fast", "speed", "deploy", "ship", "send", "deliver", "message", "route", "sync", "travel"]],
+    ["rose",      ["design", "type", "font", "generat", "art", "draw", "render", "craft", "growth", "bloom"]],
+    ["dagger",    ["secur", "auth", "cut", "sharp", "kill", "strip", "parse", "split", "tool", "cli"]]
+  ];
+
+  function resolveMotif(piece, r) {
+    if (piece.motif && piece.motif !== "auto" && MOTIFS[piece.motif]) return piece.motif;
+    const text = [piece.id, piece.title, piece.banner, piece.github && piece.github.language]
+      .filter(Boolean).join(" ").toLowerCase();
+    for (const [name, words] of MEANINGS) {
+      if (words.some((w) => text.includes(w))) return name;
+    }
+    return pick(r, MOTIF_NAMES);
+  }
+
+  function starPath(cx, cy, R, innerRatio, points, rot) {
+    let d = "";
+    for (let i = 0; i < points * 2; i++) {
+      const a = rot + (i / (points * 2)) * Math.PI * 2;
+      const [x, y] = polar(cx, cy, a, i % 2 ? R * innerRatio : R);
+      d += (i ? " L" : "M") + x + " " + y;
+    }
+    return d + " Z";
+  }
+
+  /* ── the sigil ────────────────────────────────────────────────────── */
+  function sigil(id, motifName) {
+    const r = rng(hash(id));
+    const name = (motifName && motifName !== "auto" && MOTIFS[motifName])
+      ? motifName
+      : pick(r, MOTIF_NAMES);
+
+    const parts = MOTIFS[name](r);
+    const tilt = round(between(r, -7, 7));
+
+    // grey wash: soft blobs behind the linework
+    let wash = "";
+    const blobs = 2 + Math.floor(r() * 2);
+    for (let i = 0; i < blobs; i++) {
+      wash += `<ellipse class="wash" cx="${round(between(r, 40, 60))}" cy="${round(between(r, 40, 60))}"`
+        + ` rx="${round(between(r, 19, 29))}" ry="${round(between(r, 16, 25))}"`
+        + ` transform="rotate(${round(between(r, 0, 180))} 50 50)"/>`;
+    }
+
+    // stipple: whip-shading dots, packed toward the middle so the shading
+    // sits under the subject rather than sprayed across the whole cell
+    let stipple = "";
+    const dots = 34 + Math.floor(r() * 26);
+    for (let i = 0; i < dots; i++) {
+      const a = r() * Math.PI * 2;
+      const rad = Math.pow(r(), 0.75) * 36;
+      const [x, y] = polar(50, 50, a, rad);
+      stipple += `<circle class="stipple" cx="${x}" cy="${y}" r="${round(between(r, 0.3, 0.95))}"/>`;
+    }
+
+    const lines = parts.map((p) => `<path class="${p.k}" d="${p.d}"/>`).join("");
+
+    return `<svg class="sigil" viewBox="0 0 100 100" aria-hidden="true">`
+      + `<g>${wash}</g><g>${stipple}</g>`
+      + `<g transform="rotate(${tilt} 50 50)">${lines}</g></svg>`;
+  }
+
+  function ribbon(title) {
+    return `<div class="ribbon-wrap"><svg class="ribbon" viewBox="0 0 140 30" aria-hidden="true">`
+      + `<path d="M18 7 Q70 1 122 7 L122 23 Q70 29 18 23 Z"/>`
+      + `<path d="M18 7 L3 3 L8 15 L3 27 L18 23"/>`
+      + `<path d="M122 7 L137 3 L132 15 L137 27 L122 23"/>`
+      + `</svg><span class="ribbon-text"><span class="rt">${esc(title)}</span></span></div>`;
+  }
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /* ── the three hearts ─────────────────────────────────────────────
+     The subtitle as flash: three hearts, each crossed by a banner. Unlike
+     the project sigils this is NOT seeded — it is the identity mark, so
+     it is hand-placed and identical on every load. */
+  const TAGLINES = ["growth hacker", "ai explorer", "tatted human"];
+
+  const HEART = "M50 88 C22 68 8 50 8 34 C8 19 20 10 32 10 "
+    + "C40 10 47 15 50 22 C53 15 60 10 68 10 C80 10 92 19 92 34 C92 50 78 68 50 88 Z";
+
+  // scale a copy of the heart about its visual centre, not the box origin
+  const about = (s) => `translate(50 47) scale(${s}) translate(-50 -47)`;
+
+  /* A leaf. Deliberately asymmetric: the two sides take different control
+     offsets and the tip bends, so no two read as the same stamp. The midrib
+     splits it, and one half takes the shadow — which is how a traditional
+     leaf is shaded, rather than a gradient across the whole shape. */
+  function leaf(L, W, curl) {
+    const tip = round(curl);
+    const outline = `M0 0 C${round(-W * 0.95)} ${round(-L * 0.28)} ${round(-W * 0.78)} ${round(-L * 0.74)} ${tip} ${round(-L)}`
+      + ` C${round(W * 0.68)} ${round(-L * 0.72)} ${round(W * 0.98)} ${round(-L * 0.3)} 0 0 Z`;
+    const rib = `M0 0 Q${round(curl * 0.35)} ${round(-L * 0.55)} ${tip} ${round(-L)}`;
+    const half = `M0 0 C${round(-W * 0.95)} ${round(-L * 0.28)} ${round(-W * 0.78)} ${round(-L * 0.74)} ${tip} ${round(-L)}`
+      + ` Q${round(curl * 0.35)} ${round(-L * 0.55)} 0 0 Z`;
+    return `<path class="leaf" d="${outline}"/><path class="leaf-shade" d="${half}"/>`
+      + `<path class="ink-thin" d="${outline}"/><path class="ink-thin" d="${rib}"/>`;
+  }
+
+  /* A sprig: leaves along a curving stem, every one of them a different
+     length, width, angle and tip-curl. The old version alternated a fixed
+     +/-58 degrees at a fixed size ramp, which is exactly what made it read
+     as copy-paste rather than as something drawn. */
+  function sprig(r, len, count, flip) {
+    const s = flip ? -1 : 1;
+    const cx = s * len * 0.3, cy = -len * 0.5, ex = s * len * 0.52, ey = -len;
+    const out = [`<path class="stem" d="M0 0 Q${round(cx)} ${round(cy)} ${round(ex)} ${round(ey)}"/>`];
+    for (let i = 0; i < count; i++) {
+      // uneven spacing along the stem, so the leaves do not sit on a ruler
+      const t = (i + between(r, 0.55, 0.95)) / (count + 0.45);
+      const bx = 2 * (1 - t) * t * cx + t * t * ex;
+      const by = 2 * (1 - t) * t * cy + t * t * ey;
+      const side = i % 2 ? 1 : -1;
+      const L = len * between(r, 0.34, 0.52) * (1 - t * 0.3);
+      const W = L * between(r, 0.3, 0.42);
+      const ang = side * s * between(r, 38, 74) + between(r, -8, 8);
+      out.push(`<g transform="translate(${round(bx)} ${round(by)}) rotate(${round(ang)})">`
+        + leaf(L, W, between(r, -L * 0.16, L * 0.16)) + `</g>`);
+    }
+    return out.join("");
+  }
+
+  // a small traditional five-petal flower with a dotted centre
+  function flower(r, R) {
+    const n = 5;
+    const spin = between(r, 0, 72);
+    let out = "";
+    for (let i = 0; i < n; i++) {
+      const a = spin + (i / n) * 360 + between(r, -6, 6);
+      const p = round(R * between(r, 0.92, 1.08));
+      // narrow at the base so the petals read as five separate shapes rather
+      // than one lumpy rosette
+      const d = `M0 0 C${round(-p * 0.4)} ${round(-p * 0.3)} ${round(-p * 0.62)} ${round(-p * 0.88)} 0 ${round(-p)}`
+        + ` C${round(p * 0.62)} ${round(-p * 0.88)} ${round(p * 0.4)} ${round(-p * 0.3)} 0 0 Z`;
+      out += `<g transform="rotate(${round(a)})"><path class="petal" d="${d}"/>`
+        + `<path class="ink-thin" d="${d}"/></g>`;
+    }
+    out += `<circle class="eye" cx="0" cy="0" r="${round(R * 0.34)}"/>`;
+    return out;
+  }
+
+  /* A spiral, for the rolled ends of the scrolls — the detail that makes a
+     banner read as a curled ribbon rather than a rectangle with notches. */
+  function spiralPath(cx, cy, r0, r1, turns, start, dir) {
+    const steps = 44;
+    let d = "";
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const [x, y] = polar(cx, cy, start + dir * t * turns * Math.PI * 2, r0 + (r1 - r0) * t);
+      d += (i ? " L" : "M") + x + " " + y;
+    }
+    return d;
+  }
+
+  /* The banner: a scroll that curves across the heart and rolls up at both
+     ends. Narrower than the heart is wide — in the reference the heart is
+     the subject and the banner crosses it, not the other way round. */
+  function banner(i, text) {
+    const HW = 46, T = 19, R = 13;
+    const band = `M${-HW} ${-T / 2} Q0 ${round(-T / 2 - 8)} ${HW} ${-T / 2}`
+      + ` L${HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${-HW} ${T / 2} Z`;
+
+    let out = `<path class="band" d="${band}"/>`;
+    // the underside of the sag catches the shadow
+    out += `<path class="band-shade" d="M${-HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${HW} ${T / 2}`
+      + ` L${HW} ${round(T / 2 - 3)} Q0 ${round(T / 2 - 11)} ${-HW} ${round(T / 2 - 3)} Z"/>`;
+
+    for (const dir of [-1, 1]) {
+      const cx = round(dir * (HW + R * 0.72)), cy = round(T * 0.16);
+      // the ribbon narrows into the roll
+      out += `<path class="band" d="M${dir * HW} ${round(-T / 2)} L${cx} ${cy - R}`
+        + ` L${cx} ${cy + R} L${dir * HW} ${round(T / 2)} Z"/>`;
+      out += `<circle class="band" cx="${cx}" cy="${cy}" r="${R}"/>`;
+      out += `<path class="band-shade" d="M${cx} ${cy + R} A${R} ${R} 0 0 ${dir > 0 ? 1 : 0} `
+        + `${round(cx + dir * R * 0.75)} ${round(cy - R * 0.66)} L${cx} ${cy} Z"/>`;
+      out += `<circle class="ink" cx="${cx}" cy="${cy}" r="${R}"/>`;
+      out += `<path class="ink-thin" d="${spiralPath(cx, cy, R * 0.86, R * 0.2, 1.15, Math.PI * 0.85, dir)}"/>`;
+    }
+
+    out += `<path class="ink" d="${band}"/>`;
+    out += `<path id="bnr-${i}" fill="none" d="M${-HW + 5} 1 Q0 ${round(-T / 2 - 3)} ${HW - 5} 1"/>`;
+    out += `<text class="btext" font-size="13" text-anchor="middle" dominant-baseline="middle">`
+      + `<textPath href="#bnr-${i}" startOffset="50%">${esc(text)}</textPath></text>`;
+    return out;
+  }
+
+  /* One heart. The structure is the thing the reference gets right and a
+     naive version misses: an outer outline, then a RIM BAND, then an inner
+     outline, then the body — with the beading running up the middle of the
+     rim rather than floating inset on the heart. */
+  function heartUnit(i, text, rot) {
+    const RIM = 0.845, DOTS = 0.925;
+    return `<g transform="translate(-50 -47)">`
+      + `<path class="rim" d="${HEART}"/>`
+      + `<path class="body" d="${HEART}" transform="${about(RIM)}"/>`
+      // shading: a lighter copy pushed down-right leaves a dark crescent
+      // hugging the top and left inner edge, which is where the shadow goes
+      + `<clipPath id="hc-${i}"><path d="${HEART}" transform="${about(RIM)}"/></clipPath>`
+      + `<g clip-path="url(#hc-${i})">`
+      + `<path class="body-lit" d="${HEART}" transform="translate(7 9) ${about(RIM * 0.99)}"/>`
+      + `</g>`
+      + `<path class="ink" d="${HEART}"/>`
+      + `<path class="ink" d="${HEART}" transform="${about(RIM)}"/>`
+      + `<path class="beads" d="${HEART}" transform="${about(DOTS)}"/>`
+      + `</g>`;
+  }
+
+  function heartsSVG(lines) {
+    // Hand-placed. The stagger and the overlap are the whole trick: spaced
+    // evenly on a centre line this reads as three rows of a table, not as
+    // one piece of flash.
+    const r = rng(hash("plate"));
+    const S = 1.72;
+    const LAY = [
+      { cx: 172, cy: 96,  rot: -12 },
+      { cx: 196, cy: 214, rot: 9 },
+      { cx: 164, cy: 332, rot: -11 }
+    ];
+    let out = "";
+
+    // foliage first, so only the tips show past the hearts
+    out += `<g transform="translate(104 78) rotate(-38) scale(1.5)">${sprig(r, 56, 5, true)}</g>`;
+    out += `<g transform="translate(246 56) rotate(24) scale(1.45)">${sprig(r, 54, 5, false)}</g>`;
+    out += `<g transform="translate(284 196) rotate(34) scale(1.35)">${sprig(r, 50, 4, false)}</g>`;
+    out += `<g transform="translate(88 210) rotate(-32) scale(1.4)">${sprig(r, 52, 4, true)}</g>`;
+    out += `<g transform="translate(268 330) rotate(30) scale(1.4)">${sprig(r, 52, 5, false)}</g>`;
+    out += `<g transform="translate(78 322) rotate(-28) scale(1.3)">${sprig(r, 48, 4, true)}</g>`;
+
+    lines.forEach((text, i) => {
+      const L = LAY[i];
+      out += `<g transform="translate(${L.cx} ${L.cy}) scale(${S})">`
+        + heartUnit(i, text, L.rot)
+        // +21 puts the band across the lower third, as the reference does
+        + `<g transform="translate(0 21) rotate(${L.rot})">${banner(i, text)}</g>`
+        + `</g>`;
+    });
+
+    // flowers sit on top, tucked against the hearts
+    out += `<g transform="translate(262 108) scale(1.55)">${flower(r, 18)}</g>`;
+    out += `<g transform="translate(92 240) scale(1.5)">${flower(r, 17)}</g>`;
+    out += `<g transform="translate(280 306) scale(1.3)">${flower(r, 15)}</g>`;
+
+    return `<svg class="hearts" viewBox="0 0 360 440" preserveAspectRatio="xMidYMid meet"`
+      + ` role="img" aria-label="${esc(lines.join(", "))}">${out}</svg>`;
+  }
+
+  /* ── age → tier ───────────────────────────────────────────────────
+     The whole point of the sheet: the ink records how long ago you
+     last touched the work. Sharp is recent. Bled is dormant. */
+  const TIERS = [7, 30, 120, 365];
+
+  function tierFor(pushedAt) {
+    if (!pushedAt) return 4;
+    const days = (Date.now() - Date.parse(pushedAt)) / 86400000;
+    if (!isFinite(days)) return 4;
+    for (let i = 0; i < TIERS.length; i++) if (days < TIERS[i]) return i;
+    return 4;
+  }
+
+  function ago(pushedAt) {
+    if (!pushedAt) return "unknown";
+    const days = Math.max(0, Math.round((Date.now() - Date.parse(pushedAt)) / 86400000));
+    if (days < 1) return "today";
+    if (days < 2) return "yesterday";
+    if (days < 45) return days + " days ago";
+    const months = Math.round(days / 30.4);
+    if (months < 18) return months + " months ago";
+    return Math.round(days / 365) + " years ago";
+  }
+
+  const ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix"];
+
+  /* ── build the sheet ──────────────────────────────────────────────── */
+  const data = JSON.parse(document.getElementById("flash-data").textContent);
+  const pieces = data.pieces || [];
+  const byCell = new Map(pieces.map((p) => [p.cell, p]));
+  const cellsEl = document.getElementById("cells");
+
+  const cellNodes = new Map();
+  let slotIndex = 0;
+
+  // Resolve every real piece's motif up front, so the empty slots can avoid
+  // drawing the same shape a piece is already using. Without this a stencil
+  // can land directly under its own inked twin, which reads as a duplicate
+  // rather than as a spare slot.
+  const motifOf = new Map(pieces.map((p) => [p.id, resolveMotif(p, rng(hash(p.id)))]));
+  const taken = new Set(motifOf.values());
+  const slotMotifs = MOTIF_NAMES.filter((m) => !taken.has(m));
+  const slotPool = slotMotifs.length ? slotMotifs : MOTIF_NAMES;
+
+  // The name plate now owns the whole centre column, so cells 2, 5 and 8 no
+  // longer exist as project slots. Cell numbers still mean the grid positions
+  // they always did, so projects.json needs no migration.
+  const PLATE_CELLS = new Set([2, 5, 8]);
+
+  const plateCol = document.createElement("div");
+  // tier 0: identity, not data. It must not drift green with the projects.
+  plateCol.className = "plate-col t0";
+  plateCol.innerHTML = `<h1 class="name tattoo-text">tom gray</h1>` + heartsSVG(TAGLINES);
+  cellsEl.appendChild(plateCol);
+
+  for (const p of pieces) {
+    if (PLATE_CELLS.has(p.cell)) {
+      console.warn(`projects.json: "${p.id}" is on cell ${p.cell}, which the name `
+        + `plate now occupies. Use one of 1, 3, 4, 6, 7, 9.`);
+    }
+  }
+
+  let numeral = 0;
+
+  for (let n = 1; n <= 9; n++) {
+    if (PLATE_CELLS.has(n)) continue;
+
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.dataset.cell = String(n);
+    cell.style.gridColumn = String(((n - 1) % 3) + 1);
+    cell.style.gridRow = String(Math.floor((n - 1) / 3) + 1);
+
+    if (byCell.has(n)) {
+      const p = byCell.get(n);
+      const tier = tierFor(p.github && p.github.pushed_at);
+      cell.classList.add("t" + tier);
+      cell.dataset.id = p.id;
+      cell.innerHTML =
+        `<a class="piece" href="#${encodeURIComponent(p.id)}" aria-label="${esc(p.title)}">`
+        + `<span class="num">${ROMAN[numeral]}</span>`
+        + sigil(p.id, motifOf.get(p.id))
+        + ribbon(p.title)
+        + `</a>`;
+    } else {
+      // an empty slot: pencil stencil, never inked. Motifs are dealt round
+      // robin rather than seeded — left to the hash, several of the cells
+      // collide on the same shape and the sheet looks like a mistake.
+      cell.classList.add("slot");
+      const motif = slotPool[slotIndex++ % slotPool.length];
+      cell.innerHTML = `<div aria-hidden="true">${sigil("slot-" + n, motif)}</div>`;
+    }
+
+    numeral++;
+    cellNodes.set(n, cell);
+    cellsEl.appendChild(cell);
+  }
+
+  /* Fit each banner's lettering to its own ribbon. The three phrases are
+     different lengths and Alfa Slab One is wide, so a fixed font-size would
+     either overflow the shortest banner or under-fill the longest.
+
+     The measurement has to happen on a DETACHED text element, not on the
+     textPath itself: text that overruns its path is clipped at both ends,
+     and the clipped element then reports a length that already fits — so
+     asking it whether it overflows always answers no, and the first and
+     last letters silently disappear.
+
+     Runs after fonts.ready; measuring before the webfont lands gives
+     fallback metrics and the wrong answer. */
+  function fitBanners() {
+    const svg = document.querySelector(".hearts");
+    if (!svg) return;
+    const NS = "http://www.w3.org/2000/svg";
+    const probe = document.createElementNS(NS, "text");
+    probe.setAttribute("class", "btext");
+    probe.setAttribute("x", "-9999");
+    probe.setAttribute("y", "-9999");
+    svg.appendChild(probe);
+
+    // Two passes, so all three banners end up at ONE size. Fitting each to
+    // its own ribbon independently is what a layout engine would do, but it
+    // makes the lettering step between banners on a single piece — which no
+    // tattooer would do. The tightest phrase sets the size for all of them.
+    const texts = [...svg.querySelectorAll(".btext")];
+    let ratio = 1;
+
+    for (const t of texts) {
+      const tp = t.querySelector("textPath");
+      if (!tp) continue;
+      const room = svg.querySelector(tp.getAttribute("href")).getTotalLength() * 0.94;
+      const size = parseFloat(t.getAttribute("font-size"));
+      probe.setAttribute("font-size", String(size));
+      probe.textContent = tp.textContent;
+      ratio = Math.min(ratio, room / probe.getComputedTextLength());
+    }
+
+    if (ratio < 1) {
+      for (const t of texts) {
+        t.setAttribute("font-size", round(parseFloat(t.getAttribute("font-size")) * ratio));
+      }
+    }
+
+    probe.remove();
+  }
+  /* The project ribbons need the same treatment for a different reason. The
+     banner lettering is SVG, so it scales with the viewBox for free; the
+     ribbon title is HTML text at a viewport-derived size sitting in a ribbon
+     whose width is a percentage. Those two scale on different curves, so a
+     long title spills past the ribbon ends on narrow screens — which is how
+     "smart blinds" became "MART BLIND". Unlike the banners this has to
+     re-run on resize, because the available width is in px, not user units. */
+  function fitRibbons() {
+    document.querySelectorAll(".ribbon-text").forEach((box) => {
+      const label = box.querySelector(".rt");
+      if (!label) return;
+      // The size goes on the BOX, not on the inner label. `letter-spacing`
+      // is declared in em on .ribbon-text, so it computes there once and
+      // inherits downward as a fixed PX length. Shrinking the label alone
+      // therefore shrinks the glyphs but not the ~12px of tracking between
+      // them: the width stops scaling linearly with font-size, and the
+      // fitter converges on a size it wrongly believes fits. Sizing the box
+      // makes the tracking re-resolve and the whole run scale together.
+      box.style.fontSize = "";
+      const cs = getComputedStyle(box);
+      const room = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      if (room <= 0) return;
+      let size = parseFloat(cs.fontSize);
+      // percentage padding resolves against the containing block, not the
+      // font, so `room` is stable across passes and this cannot oscillate
+      for (let pass = 0; pass < 3; pass++) {
+        const w = label.getBoundingClientRect().width;
+        if (w <= room) break;
+        size = size * (room * 0.97 / w);
+        box.style.fontSize = size.toFixed(2) + "px";
+      }
+    });
+  }
+
+  function fitAll() { fitBanners(); fitRibbons(); }
+
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
+  else addEventListener("load", fitAll);
+
+  /* Refit whenever a ribbon's box actually changes size, not just on window
+     resize. fonts.ready fires before the plate column has finished settling —
+     the hearts SVG resolves its height, the column reflows, and every ribbon
+     box gets a few px narrower AFTER the fitter has already run against the
+     old width. That left the title one pixel over its ribbon at narrow
+     widths. Observing the box closes the loop; changing the label's
+     font-size does not change the wrapper's width (it is a percentage of the
+     cell), so this cannot feed back on itself. */
+  if (window.ResizeObserver) {
+    let roTimer = 0;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(roTimer);
+      roTimer = setTimeout(fitRibbons, 60);
+    });
+    document.querySelectorAll(".ribbon-wrap").forEach((el) => ro.observe(el));
+  }
+
+  let fitTimer = 0;
+  addEventListener("resize", () => {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fitRibbons, 120);
+    // a zoomed piece is positioned from measured geometry, so it has to be
+    // recomputed against the new viewport or the zoom drifts off-centre
+    if (current) {
+      const p = pieces.find((x) => x.id === current);
+      if (p) sheet.style.transform = transformFor(p.cell);
+    }
+  });
+
+  /* ── zoom: navigate the plane by depth, not by length ─────────────
+     One transform on one element, so it animates natively in every
+     browser — no framework, and deliberately NOT the View Transitions
+     API: VT cross-fades a snapshot of the old page against the new one,
+     which would replace this real transform with a dissolve. A genuine
+     scale reads as leaning into the sheet; a dissolve reads as a slide
+     deck. The reader chrome fades in over it via CSS. */
+  const sheet = document.getElementById("sheet");
+  const reader = document.getElementById("reader");
+  const dismiss = document.getElementById("dismiss");
+  const ZOOM = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--zoom")) || 2.6;
+
+  /* Measured from the cell's actual box rather than assuming equal thirds:
+     the centre column is deliberately wider than the outer two, so the old
+     (col + 0.5) / 3 arithmetic would now aim the zoom slightly off-centre.
+     Reading real geometry also means this keeps working if the track sizes
+     are ever retuned. */
+  function transformFor(n) {
+    const cell = cellNodes.get(n);
+    if (!cell) return "translate(0, 0) scale(1)";
+    const cx = cell.offsetLeft + cell.offsetWidth / 2;
+    const cy = cell.offsetTop + cell.offsetHeight / 2;
+    const tx = innerWidth / 2 - ZOOM * cx;
+    const ty = innerHeight / 2 - ZOOM * cy;
+    return `translate(${round(tx)}px, ${round(ty)}px) scale(${ZOOM})`;
+  }
+
+  function readerHTML(p) {
+    const g = p.github || {};
+    const meta = [];
+    if (g.language) meta.push(["written in", g.language]);
+    meta.push(["last worked", ago(g.pushed_at)]);
+    if (g.stars) meta.push(["stars", String(g.stars)]);
+
+    return `<h2 class="tattoo-text">${esc(p.title)}</h2>`
+      + (p.banner ? `<p>${esc(p.banner)}</p>` : "")
+      + `<dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`
+      + (p.url
+        ? `<a class="out" href="${esc(p.url)}" rel="noopener">see the work &rarr;</a>`
+        : `<span class="locked">not for sale — private work</span>`);
+  }
+
+  let current = null;
+
+  function apply(id) {
+    const p = id ? pieces.find((x) => x.id === id) : null;
+
+    for (const [, node] of cellNodes) node.classList.remove("active");
+
+    if (!p) {
+      document.body.classList.remove("zoomed");
+      sheet.style.transform = "translate(0, 0) scale(1)";
+      reader.innerHTML = "";
+      current = null;
+      return;
+    }
+
+    const cell = cellNodes.get(p.cell);
+    if (cell) cell.classList.add("active");
+    // the reader inherits the piece's tier, so its title bleeds by the
+    // same amount the flash does
+    reader.className = "reader t" + tierFor(p.github && p.github.pushed_at);
+    reader.innerHTML = readerHTML(p);
+    document.body.classList.add("zoomed");
+    sheet.style.transform = transformFor(p.cell);
+    current = p.id;
+    if (id !== null) reader.focus({ preventScroll: true });
+  }
+
+  function route() {
+    const id = decodeURIComponent(location.hash.replace(/^#/, ""));
+    const valid = id && pieces.some((p) => p.id === id);
+    const next = valid ? id : null;
+    if (next === current) return;
+
+    apply(next);
+
+    // tidy the trailing "#" the close leaves behind
+    if (!valid && location.hash) {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+  }
+
+  addEventListener("hashchange", route);
+  route();
+
+  const close = () => { location.hash = ""; };
+  dismiss.addEventListener("click", close);
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && current) { e.preventDefault(); close(); }
+  });
+
+})();
+</script>
 </body>
 </html>

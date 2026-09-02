@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Curated source of truth for the flash sheet. Edit by hand.",
+    "Run `node tools/ink.mjs --refresh` to pull the `github` block for any",
+    "entry with a `repo`, then inline everything into index.html.",
+    "",
+    "cell: position on the 3x3 sheet in reading order. The centre column",
+    "      (2, 5, 8) is the name plate and the three hearts, so the valid",
+    "      project cells are 1, 3, 4, 6, 7 and 9 — six slots.",
+    "motif: 'auto' seeds from the id; or pin one of dagger|swallow|moon|rose.",
+    "url: optional. Omit it for private work — the piece renders, but there is",
+    "     nothing to claim, which is on-theme rather than a gap."
+  ],
+  "pieces": [
+    {
+      "id": "smart-blinds",
+      "title": "smart blinds",
+      "banner": "Blinds that read the light and decide for themselves.",
+      "repo": "tom-gray-builds/smart-blinds",
+      "url": "https://github.com/tom-gray-builds/smart-blinds",
+      "motif": "auto",
+      "cell": 1,
+      "github": {
+        "pushed_at": "2026-04-04T09:03:53Z",
+        "language": "JavaScript",
+        "stars": 1
+      }
+    }
+  ]
+}

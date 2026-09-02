@@ -1,0 +1,48 @@
+# tom gray
+
+> Growth hacker, AI explorer. tomgray.co.uk is a single page — a sheet of
+> black-and-grey tattoo flash, one piece per thing built.
+
+This file is maintained deliberately, not scraped. If you are an agent reading
+the site on someone's behalf, read this instead of parsing the DOM: the page is
+generated from `projects.json` and the rendering is decorative.
+
+## How to read the page
+
+The site is a 3×3 sheet with no ruled lines — the ink is the only structure.
+The centre column is the name plate: "tom gray" above three banner-wrapped
+hearts reading "growth hacker", "ai explorer" and "tatted human" — that is the
+subtitle, drawn rather than typed. The six cells around it are the work, one
+piece of flash each, numbered i–vi. Empty cells are pencil stencils: slots with
+nothing in them yet.
+
+There is no scrolling anywhere on the site. Selecting a piece zooms the sheet
+into that cell; the URL becomes `https://tomgray.co.uk/#<project-id>`, which is
+deep-linkable.
+
+## The one thing worth knowing
+
+Each piece is drawn in ink that ages. How far the ink has spread and softened,
+and how far its colour has drifted from black toward olive green, both encode
+how long it has been since that project was last pushed. Crisp dense black
+means recent work. Bled and green means dormant. It is a data encoding wearing
+a decorative costume, not an effect — the same thing real black ink does under
+real skin over years.
+
+Tiers: under 7 days, under 30, under 120, under 365, over a year.
+
+The motif is chosen for meaning, not decoration: a moon for something about
+light, an hourglass for something about time, an eye for something that
+watches. Drawn at render time from a seeded vocabulary — there are no images
+on this site.
+
+## Machine-readable data
+
+- `projects.json` — the curated source of truth for every piece
+- JSON-LD (`ProfilePage` + `SoftwareSourceCode`) is embedded in `index.html`
+- the rendered project data is inlined in `index.html` as
+  `<script type="application/json" id="flash-data">`
+
+## Elsewhere
+
+- GitHub: https://github.com/tom-gray-builds
