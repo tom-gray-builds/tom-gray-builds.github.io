@@ -20,8 +20,9 @@ Defined in `index.html` as CSS custom properties on `:root`:
 Usage:
 
 - **Filled shapes** (e.g. `.grid`): `filter: var(--tattoo-filter) var(--tattoo-glow);`
-- **Text** (`.name`): `filter: var(--tattoo-filter);` plus `text-shadow`
-  and `-webkit-text-stroke` for crisper per‑glyph glow.
+- **Text** (`.name`, `.tagline`): add the `.tattoo-text` class — it applies
+  `var(--tattoo-filter)` plus `text-shadow` and `-webkit-text-stroke` for
+  crisper per‑glyph glow.
 
 The `#blowout` SVG filter lives inline at the bottom of `index.html`.
 
