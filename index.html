@@ -33,6 +33,24 @@
       drop-shadow(0 0 6px rgba(60, 90, 100, 0.35));
   }
 
+  /* Below ~600px the name renders near its 1.75rem clamp floor. The
+     tattoo filter's blur/displacement/stroke widths above are tuned in
+     fixed px for the ~96px desktop size, so at that floor they're large
+     relative to the glyph strokes and the blackletter letterforms blur
+     into each other ("squashed"). Swap in a lighter SVG filter and
+     thinner glow so the distortion stays proportional to letter size. */
+  @media (max-width: 600px) {
+    :root {
+      --tattoo-filter: url(#blowout-mobile) blur(0.3px) saturate(0.8);
+      --tattoo-glow:
+        drop-shadow(0 0 0.5px rgba(32, 34, 47, 0.9))
+        drop-shadow(0 0 2px rgba(58, 74, 90, 0.5))
+        drop-shadow(0 0 6px rgba(58, 74, 90, 0.25))
+        drop-shadow(0.5px 0.5px 0 rgba(58, 74, 90, 0.32))
+        drop-shadow(0 0 3px rgba(60, 90, 100, 0.35));
+    }
+  }
+
   * {
     margin: 0;
     padding: 0;
@@ -92,6 +110,8 @@
     text-transform: lowercase;
     white-space: nowrap;
     user-select: none;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 
     /* tattoo styling */
     filter: var(--tattoo-filter);
@@ -111,6 +131,22 @@
     color: rgba(60, 90, 100, 0.35);
     filter: blur(4px);
     z-index: -1;
+  }
+
+  @media (max-width: 600px) {
+    .name {
+      text-shadow:
+        0 0 0.5px rgba(32, 34, 47, 0.9),
+        0 0 2px rgba(58, 74, 90, 0.55),
+        0 0 6px rgba(58, 74, 90, 0.28),
+        0.5px 0.5px 0 rgba(58, 74, 90, 0.35),
+        -0.5px 0 0 rgba(58, 74, 90, 0.3);
+      -webkit-text-stroke: 0.2px rgba(32, 34, 47, 0.35);
+    }
+
+    .name::before {
+      filter: blur(2px);
+    }
   }
 </style>
 </head>
@@ -138,6 +174,33 @@
       />
       <feGaussianBlur in="displaced" stdDeviation="0.5" result="soft" />
       <feMorphology in="soft" operator="dilate" radius="0.4" result="spread" />
+      <feMerge>
+        <feMergeNode in="spread" />
+        <feMergeNode in="soft" />
+      </feMerge>
+    </filter>
+
+    <!-- lighter version of #blowout for the small mobile clamp floor, so
+         the ink-bleed distortion stays proportional to the smaller glyphs
+         instead of swallowing them -->
+    <filter id="blowout-mobile">
+      <feTurbulence
+        type="fractalNoise"
+        baseFrequency="0.012 0.018"
+        numOctaves="2"
+        seed="7"
+        result="noise"
+      />
+      <feDisplacementMap
+        in="SourceGraphic"
+        in2="noise"
+        scale="2.5"
+        xChannelSelector="R"
+        yChannelSelector="G"
+        result="displaced"
+      />
+      <feGaussianBlur in="displaced" stdDeviation="0.25" result="soft" />
+      <feMorphology in="soft" operator="dilate" radius="0.2" result="spread" />
       <feMerge>
         <feMergeNode in="spread" />
         <feMergeNode in="soft" />
