@@ -156,11 +156,18 @@
   </div>
 
   <svg width="0" height="0" style="position: absolute">
-    <!-- roughen + spread the letter edges like ink bled under skin -->
+    <!--
+      Roughen + spread the edges like ink bled under skin.
+      All values are in fixed CSS pixels, so the blowout is the SAME
+      absolute width (~3-4px) whether it's the big title, the subtitle
+      or the grid lines. The noise frequency is kept high on purpose:
+      a low frequency makes big glyphs lurch in 20-30px lumps while
+      small text only quivers, which is what made the title look off.
+    -->
     <filter id="blowout">
       <feTurbulence
         type="fractalNoise"
-        baseFrequency="0.012 0.018"
+        baseFrequency="0.09"
         numOctaves="2"
         seed="7"
         result="noise"
@@ -168,13 +175,13 @@
       <feDisplacementMap
         in="SourceGraphic"
         in2="noise"
-        scale="6"
+        scale="4"
         xChannelSelector="R"
         yChannelSelector="G"
         result="displaced"
       />
-      <feGaussianBlur in="displaced" stdDeviation="0.5" result="soft" />
-      <feMorphology in="soft" operator="dilate" radius="0.4" result="spread" />
+      <feGaussianBlur in="displaced" stdDeviation="0.4" result="soft" />
+      <feMorphology in="soft" operator="dilate" radius="0.5" result="spread" />
       <feMerge>
         <feMergeNode in="spread" />
         <feMergeNode in="soft" />

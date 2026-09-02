@@ -24,7 +24,10 @@ Usage:
   `var(--tattoo-filter)` plus `text-shadow` and `-webkit-text-stroke` for
   crisper per‑glyph glow.
 
-The `#blowout` SVG filter lives inline at the bottom of `index.html`.
+The `#blowout` SVG filter lives inline at the bottom of `index.html`. Its
+values are all fixed CSS pixels and its noise frequency is deliberately
+high, so the blowout is the **same absolute width (~3–4px) at every font
+size** — it does not scale up with the title.
 
 When asked for "tattoo styling", match this recipe.
 
