@@ -303,7 +303,29 @@
     flex: 0 1 auto;
     min-height: 0;
     overflow: visible;
-    filter: var(--tattoo-filter) var(--tattoo-glow);
+  }
+
+  /* The filter goes on the INK layer, not on the whole sigil — see the note
+     in sigil(). A line filtered together with the grey shade sitting right
+     behind it barely blooms; on its own it always bleeds against open paper.
+
+     The scroll on the name plate is deliberately NOT split this way. Its
+     fills and its ink have to interleave — the banner is opaque and passes in
+     front of the foliage — so bucketing every fill ahead of every line would
+     draw the sprig ends straight through the ribbon. Its flat tones are also
+     opaque rather than translucent grey, so a line over them already has the
+     contrast to bleed; the split buys much less there than it does on a
+     sigil. */
+  .sigil-ink { filter: var(--tattoo-filter) var(--tattoo-glow); }
+
+  /* Small type drawn ON the sheet takes a text-shadow-only glow: these sit at
+     sizes where the SVG blowout mushes the glyphs (the same reason the ribbon
+     titles sit outside the filter), but left plain they read as un-inked next
+     to everything around them. The reader's copy is pointedly excluded — it
+     is chrome, not flash, and it has to stay legible. */
+  .piece .num,
+  .dismiss {
+    text-shadow: 0 0 calc(1px + var(--age) * 2px) rgba(84, 104, 76, calc(0.18 + var(--age) * 0.22));
   }
 
   /* traditional flash is defined by its outline: bold, even, unbroken.
@@ -382,7 +404,7 @@
      out at one opacity. */
   .cell.filler { opacity: var(--fade, 0.45); }
   .slot { --age: 0.5; }
-  .slot .sigil { filter: none; }
+  .slot .sigil-ink { filter: none; }
   .slot .sigil .line,
   .slot .sigil .thin,
   .slot .sigil .beads { stroke-width: 2.2; stroke-dasharray: 4 4.5; }
@@ -431,7 +453,7 @@
      per-frame cost from fifty filter graphs down to one. */
   body.zoomed .cell:not(.active) { opacity: 0.1; }
 
-  body.zoomed .cell:not(.active) .sigil,
+  body.zoomed .cell:not(.active) .sigil-ink,
   body.zoomed .cell:not(.active) .ribbon,
   body.zoomed .cell:not(.active) .scroll,
   body.zoomed .cell:not(.active) .tattoo-text { filter: none; }
@@ -1250,12 +1272,23 @@
       stipple += `<circle class="stipple" cx="${x}" cy="${y}" r="${round(between(r, 0.3, 0.95))}"/>`;
     }
 
-    const lines = parts.map((p) =>
-      `<path class="${p.k}" d="${p.d}"${p.t ? ` transform="${p.t}"` : ""}/>`).join("");
+    /* Ink is split into its own group from the flat grey fill, because the
+       filter rasterises everything inside the element it is applied to as ONE
+       image. Filter the whole sigil and a line drawn over its own shade fill
+       barely blooms — dilating one translucent grey into another right behind
+       it is almost no contrast for the blur to carry. Only edges bordering
+       true transparency (mostly the outer contour) ever showed a halo, so
+       iris circles, dagger hatching and leaf ribs stayed crisp while the
+       silhouette around them bled. Filtered on its own, every line rasterises
+       against open paper and blows out the same way the outline does. */
+    const draw = (p) => `<path class="${p.k}" d="${p.d}"${p.t ? ` transform="${p.t}"` : ""}/>`;
+    const fills = parts.filter((p) => p.k === "shade").map(draw).join("");
+    const inks = parts.filter((p) => p.k !== "shade").map(draw).join("");
 
     return `<svg class="sigil" viewBox="0 0 100 100" aria-hidden="true">`
       + `<g>${wash}</g><g>${stipple}</g>`
-      + `<g transform="rotate(${tilt} 50 50)">${lines}</g></svg>`;
+      + `<g class="sigil-fill" transform="rotate(${tilt} 50 50)">${fills}</g>`
+      + `<g class="sigil-ink" transform="rotate(${tilt} 50 50)">${inks}</g></svg>`;
   }
 
   function ribbon(title) {
