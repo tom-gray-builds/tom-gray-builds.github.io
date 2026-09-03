@@ -997,7 +997,7 @@
     }
 
     out += `<path class="ink" d="${band}"/>`;
-    out += `<path id="bnr-${i}" fill="none" d="M${-HW + 5} 1 Q0 ${round(-T / 2 - 3)} ${HW - 5} 1"/>`;
+    out += `<path id="bnr-${i}" fill="none" d="M${-HW + 5} 0 Q0 -8 ${HW - 5} 0"/>`;
     out += `<text class="btext" font-size="13" text-anchor="middle" dominant-baseline="middle">`
       + `<textPath href="#bnr-${i}" startOffset="50%">${esc(text)}</textPath></text>`;
     return out;
@@ -1037,13 +1037,17 @@
     ];
     let out = "";
 
-    // foliage first, so only the tips show past the hearts
+    // foliage first, so only the tips show past the hearts. Every anchor
+    // point below is placed to land ON a heart's rim (same +74/-40 and
+    // -68/-18 offsets from each heart's centre, since all three hearts are
+    // the same size) — a sprig rooted in empty space reads as litter on the
+    // sheet, not as growth coming off the piece.
     out += `<g transform="translate(104 78) rotate(-38) scale(1.5)">${sprig(r, 56, 5, true)}</g>`;
     out += `<g transform="translate(246 56) rotate(24) scale(1.45)">${sprig(r, 54, 5, false)}</g>`;
-    out += `<g transform="translate(284 196) rotate(34) scale(1.35)">${sprig(r, 50, 4, false)}</g>`;
-    out += `<g transform="translate(88 210) rotate(-32) scale(1.4)">${sprig(r, 52, 4, true)}</g>`;
-    out += `<g transform="translate(268 330) rotate(30) scale(1.4)">${sprig(r, 52, 5, false)}</g>`;
-    out += `<g transform="translate(78 322) rotate(-28) scale(1.3)">${sprig(r, 48, 4, true)}</g>`;
+    out += `<g transform="translate(270 174) rotate(34) scale(1.35)">${sprig(r, 50, 4, false)}</g>`;
+    out += `<g transform="translate(128 196) rotate(-32) scale(1.4)">${sprig(r, 52, 4, true)}</g>`;
+    out += `<g transform="translate(238 292) rotate(30) scale(1.4)">${sprig(r, 52, 5, false)}</g>`;
+    out += `<g transform="translate(96 314) rotate(-28) scale(1.3)">${sprig(r, 48, 4, true)}</g>`;
 
     lines.forEach((text, i) => {
       const L = LAY[i];
