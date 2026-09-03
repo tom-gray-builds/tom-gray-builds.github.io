@@ -363,6 +363,21 @@
     text-shadow: 0 0 calc(2px + var(--age) * 3px) rgba(84, 104, 76, calc(0.25 + var(--age) * 0.3));
   }
 
+  /* Everything else drawn on the sheet gets the same treatment as the ribbon
+     titles above: a text-shadow-only glow, no filter or stroke. These sit at
+     type sizes too small for the SVG blowout (it mushes fine glyphs the way
+     it does on ribbon lettering), but leaving them plain would mean the
+     piece numerals and the reader copy read as un-inked next to everything
+     around them. */
+  .piece .num,
+  .reader p,
+  .reader dl,
+  .reader .out,
+  .reader .locked,
+  .dismiss {
+    text-shadow: 0 0 calc(1px + var(--age) * 2px) rgba(84, 104, 76, calc(0.18 + var(--age) * 0.22));
+  }
+
   /* ── an empty slot ─────────────────────────────────────────────────
      Pencil stencil, never inked. The sheet has room for more work —
      said with drawing rather than with copy. */
