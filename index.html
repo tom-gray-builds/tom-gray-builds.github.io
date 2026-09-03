@@ -75,8 +75,10 @@
       drop-shadow(0 0 calc(6px + var(--age) * 12px) rgba(94, 111, 86, calc(0.08 + var(--age) * 0.2)))
       drop-shadow(1px 1px 0 rgba(70, 88, 66, 0.22));
 
-    /* how far the sheet scales when you lean into a single piece */
-    --zoom: 2.6;
+    /* How far the sheet is currently scaled. Written by the script when you
+       lean into a piece and read back by the zoomed glow, which has to divide
+       its radii by it. 1 = the whole sheet, nothing zoomed. */
+    --z: 1;
   }
 
   /* Age tiers: crisp dense black through to spread, faded, green.
@@ -125,32 +127,47 @@
     will-change: transform;
   }
 
-  /* No ruled lines. A flash sheet is held together by the spacing between
-     the pieces, not by a drawn grid — the ink is the only structure. The
-     3x3 arrangement survives as invisible placement.
-
-     The centre COLUMN is one tall piece (the name plate + the three hearts),
-     so cells 2, 5 and 8 are gone. Project cells are 1, 3, 4, 6, 7, 9 — six
-     slots, and those numbers still mean the same grid positions they always
-     did, so projects.json needs no migration. */
+  /* No ruled lines, and now no grid either. A flash sheet is held together
+     by the spacing between the pieces, not by a drawn structure — the ink is
+     the only structure. Every piece is placed by the packer (`packSheet` in
+     the script): big work down first at seeded random positions, small filler
+     dropped into whatever gaps are left, each one tilted off square. Boxes
+     are set in px against the live viewport, so the sheet re-packs on resize
+     rather than stretching. */
   .cells {
     position: absolute;
     inset: 0;
     z-index: 1;
-    display: grid;
-    grid-template-columns: 1fr 1.08fr 1fr;
-    grid-template-rows: repeat(3, 1fr);
   }
 
   .cell {
-    position: relative;
+    position: absolute;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 0;
-    min-height: 0;
-    transition: opacity 0.5s ease;
+    /* the fade is declared with the zoom rules further down, where the
+       visibility hand-off it is paired with can be read alongside it */
   }
+
+  /* The tilt lives on the child, driven by --rot, so that zooming or hovering
+     a piece can straighten it — an inline `transform` on the cell itself would
+     outrank any rule trying to. --u is the cell's width in px: every type size
+     inside a piece is a fraction of it, because the pieces are no longer all
+     the same size. */
+  .cell > * {
+    width: 100%;
+    height: 100%;
+    transform: rotate(var(--rot, 0deg)) scale(var(--s, 1));
+    transform-origin: 50% 50%;
+    transition: transform 0.55s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  /* filler is scenery: it fills the paper, it does not answer to the pointer */
+  .cell.filler { pointer-events: none; }
+
+  /* the only affordance the work needs: it straightens up under the cursor */
+  .cell.work:hover, .cell.work:focus-within { --rot: 0deg; --s: 1.07; }
 
   /* text form of the tattoo styling: SVG blowout + ink-bleed glow + stroke */
   .tattoo-text {
@@ -164,25 +181,19 @@
     -webkit-text-stroke: 0.4px rgba(22, 24, 26, 0.25);
   }
 
-  /* ── the name plate — the whole centre column ─────────────────────
-     Name at the top, three hearts beneath it carrying the subtitle. Pinned
-     to tier 0: this is identity, not data, so it must not drift green with
-     the projects. */
-  .plate-col {
-    grid-column: 2;
-    grid-row: 1 / 4;
-    position: relative;
-    z-index: 1;
+  /* ── the name plate ───────────────────────────────────────────────
+     The sheet's signature: the name over one scroll banner, foliage either
+     side. It is placed by the same packer as everything else and tilts like
+     everything else, because on a flash sheet the artist's name is another
+     piece of flash, not a page header. Pinned to tier 0: this is identity,
+     not data, so it must not drift green with the projects. */
+  .plate-in {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    gap: clamp(0.4rem, 1.4vh, 1.1rem);
-    padding: clamp(0.75rem, 3vh, 2.2rem) 2% clamp(0.5rem, 2vh, 1.5rem);
-    min-height: 0;
-    min-width: 0;
+    justify-content: center;
+    gap: 0.12em;
     user-select: none;
-    transition: opacity 0.5s ease;
   }
 
   .name {
@@ -190,7 +201,7 @@
     /* lighter blackletter — thinner strokes so the ink blowout stays crisp */
     font-family: "Grenze Gotisch", "IM Fell English", serif;
     font-weight: 300;
-    font-size: clamp(1.7rem, 5.4vw, 4.6rem);
+    font-size: calc(var(--u) * 0.208);
     line-height: 1;
     color: var(--ink);
     letter-spacing: 0.03em;
@@ -199,14 +210,12 @@
     flex: 0 0 auto;
   }
 
-  /* ── the three hearts ─────────────────────────────────────────────
-     The subtitle, carried on banners instead of set as a line of type.
-     Sized to whatever height is left under the name so the sheet never
-     scrolls, which is why it is flex:1 with min-height:0. */
-  .hearts {
-    flex: 1 1 auto;
-    min-height: 0;
+  /* ── the scroll under the name ────────────────────────────────────
+     The subtitle carried on a banner instead of set as a line of type. */
+  .scroll {
+    display: block;
     width: 100%;
+    height: auto;
     overflow: visible;
     filter: var(--tattoo-filter) var(--tattoo-glow);
   }
@@ -214,19 +223,14 @@
   /* Flat tones, not gradients. Traditional flash shades in blocks of solid
      value that follow the form — a smooth ramp reads as digital airbrush and
      is the single thing that most gives away a drawn-in-code tattoo. */
-  /* The value order is what sells it. In the reference the heart body is the
-     DARKEST thing on the sheet and the rim band is nearly paper — that hard
-     light/dark step around the beading is the whole effect. Leaves and petals
-     sit in the middle so they read behind the hearts, not on top of them. */
-  .hearts {
-    --t1: #dedacd;  /* rim band, barely off the paper */
+  .scroll {
     --t2: #b6b8ab;  /* petals */
     --t3: #8b8f81;  /* leaves, banner underside */
-    --t4: #5b6053;  /* leaf shadow, lit side of the heart body */
-    --t5: #262a22;  /* heart body, shadow side */
+    --t4: #5b6053;  /* leaf shadow */
+    --t5: #262a22;  /* the darkest value on the sheet */
   }
 
-  .hearts .ink {
+  .scroll .ink {
     fill: none;
     stroke: var(--ink);
     stroke-width: 3.4;
@@ -234,34 +238,19 @@
     stroke-linecap: round;
   }
 
-  .hearts .ink-thin { fill: none; stroke: var(--ink); stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+  .scroll .ink-thin { fill: none; stroke: var(--ink); stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
 
-  .hearts .rim { fill: var(--t1); }
-  .hearts .body { fill: var(--t5); }
-  .hearts .body-lit { fill: var(--t4); }
+  /* the banner is opaque — it passes IN FRONT of the foliage */
+  .scroll .band { fill: var(--skin); stroke: var(--ink); stroke-width: 3.2; stroke-linejoin: round; }
+  .scroll .band-shade { fill: var(--t3); stroke: none; opacity: 0.55; }
 
-  /* The beading sits INSIDE the rim band — between the outer outline and the
-     inner one — not inset on the heart itself. Dotted stroke on a copy of the
-     heart scaled to run up the middle of that band. */
-  .hearts .beads {
-    fill: none;
-    stroke: var(--ink);
-    stroke-width: 2.6;
-    stroke-linecap: round;
-    stroke-dasharray: 0.001 9;
-  }
+  .scroll .leaf { fill: var(--t3); stroke: none; }
+  .scroll .leaf-shade { fill: var(--t4); stroke: none; }
+  .scroll .stem { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; }
+  .scroll .petal { fill: var(--t2); stroke: none; }
+  .scroll .eye { fill: var(--t5); stroke: var(--ink); stroke-width: 1.8; }
 
-  /* the banner is opaque — it passes IN FRONT of the heart */
-  .hearts .band { fill: var(--skin); stroke: var(--ink); stroke-width: 3.2; stroke-linejoin: round; }
-  .hearts .band-shade { fill: var(--t3); stroke: none; opacity: 0.55; }
-
-  .hearts .leaf { fill: var(--t3); stroke: none; }
-  .hearts .leaf-shade { fill: var(--t4); stroke: none; }
-  .hearts .stem { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; }
-  .hearts .petal { fill: var(--t2); stroke: none; }
-  .hearts .eye { fill: var(--t5); stroke: var(--ink); stroke-width: 1.8; }
-
-  .hearts .btext {
+  .scroll .btext {
     font-family: "Sancreek", "IM Fell English", serif;
     fill: var(--ink);
     text-transform: uppercase;
@@ -288,7 +277,7 @@
     gap: 0.4em;
     width: 100%;
     height: 100%;
-    padding: 6%;
+    padding: 3%;
     color: inherit;
     text-decoration: none;
     cursor: pointer;
@@ -297,17 +286,22 @@
 
   .piece .num {
     position: absolute;
-    top: 9%;
-    left: 11%;
-    font-size: min(1.5vw, 2.4vh);
+    top: 5%;
+    left: 7%;
+    font-size: calc(var(--u) * 0.085);
     letter-spacing: 0.22em;
     opacity: 0.5;
     font-variant: small-caps;
   }
 
+  /* Sized by its box, not by the viewport: the pieces are no longer all the
+     same size, so the packer's --u is the only scale that matters here. */
   .sigil {
-    width: min(17vw, 29vh);
-    height: min(17vw, 29vh);
+    width: 100%;
+    aspect-ratio: 1;
+    height: auto;
+    flex: 0 1 auto;
+    min-height: 0;
     overflow: visible;
     filter: var(--tattoo-filter) var(--tattoo-glow);
   }
@@ -325,6 +319,15 @@
      smudge with an edge, and grey wash has no edge. */
   .sigil .wash { fill: url(#wash-grad); }
   .sigil .stipple { fill: var(--wash-1); opacity: 0.22; }
+  /* beading: a dotted stroke run along a scaled copy of an outline, the way a
+     traditional heart or banner carries a row of pearls inside its rim */
+  .sigil .beads {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-dasharray: 0.001 8;
+  }
 
   /* the banner: outlined ribbon with the title inside it.
      The filter goes on the SVG only — running a 1px dilate over 16px
@@ -332,8 +335,8 @@
      text-shadow instead. */
   .ribbon-wrap {
     position: relative;
-    width: 84%;
-    max-width: min(21vw, 32vh);
+    width: 92%;
+    flex: 0 0 auto;
   }
 
   .ribbon {
@@ -352,7 +355,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: min(1.25vw, 1.95vh);
+    font-size: calc(var(--u) * 0.078);
     letter-spacing: 0.1em;
     font-variant: small-caps;
     text-transform: lowercase;
@@ -363,14 +366,27 @@
     text-shadow: 0 0 calc(2px + var(--age) * 3px) rgba(84, 104, 76, calc(0.25 + var(--age) * 0.3));
   }
 
-  /* ── an empty slot ─────────────────────────────────────────────────
-     Pencil stencil, never inked. The sheet has room for more work —
-     said with drawing rather than with copy. */
-  .slot { opacity: 0.2; --age: 0.5; }
+  /* ── a stencil ─────────────────────────────────────────────────────
+     Pencil, never inked. EVERY piece of filler is drawn this way, and that
+     is the whole navigation of the sheet: if it is inked it is real work and
+     it opens; if it is a dotted outline it is a placeholder holding space for
+     work that isn't on the sheet yet. Nothing else has to be said about which
+     of fifty pieces you can click.
+
+     No fill, no wash, no stipple and no ink blowout — a stencil is a line and
+     nothing else. (It is also, as a side effect, most of why the zoom is
+     cheap: forty of the fifty pieces now run no filter at all.)
+
+     The fade varies per piece so the sheet reads as drawn by hand over time,
+     some of it pressed harder than the rest, rather than as one shape stamped
+     out at one opacity. */
+  .cell.filler { opacity: var(--fade, 0.45); }
+  .slot { --age: 0.5; }
   .slot .sigil { filter: none; }
   .slot .sigil .line,
-  .slot .sigil .thin { stroke-width: 1.9; stroke-dasharray: 4 4.5; }
-  .slot .sigil .solid { fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-dasharray: 4 4.5; }
+  .slot .sigil .thin,
+  .slot .sigil .beads { stroke-width: 2.2; stroke-dasharray: 4 4.5; }
+  .slot .sigil .solid { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-dasharray: 4 4.5; }
   .slot .sigil .wash,
   .slot .sigil .shade,
   .slot .sigil .stipple { display: none; }
@@ -402,20 +418,44 @@
   /* ── zoomed state ──────────────────────────────────────────────────
      Navigation by depth, not by length. The sheet is a plane you lean
      into; the piece grows, everything else recedes. */
-  /* the plate column has to recede too — it is not a .cell, and at 2.6x its
-     banner tails reach into frame behind the zoomed piece */
-  body.zoomed .cell:not(.active),
-  body.zoomed .plate-col { opacity: 0.1; }
+  /* ── what makes the zoom smooth ────────────────────────────────────
+     The sheet carries fifty-odd pieces and every one of them is running an
+     SVG filter — a morphology dilate plus a gaussian blur. A CSS transform on
+     a plain layer is free, but scaling a filtered element is not: the filter
+     graph has to be re-run at the new scale on EVERY FRAME, for every piece,
+     and fifty of those turns a 700ms animation into a slideshow.
 
-  /* The sheet scales by --zoom, and drop-shadow radii scale with it — so a
-     halo tuned at sheet size blooms into neon at piece size. Divide it back
-     down. The age relationship is preserved, just at the new scale. */
+     So the moment you lean into a piece, every other piece drops its filters.
+     They are fading to a tenth opacity anyway — nobody can see the difference
+     between a blown-out line and a plain one at that point, and it takes the
+     per-frame cost from fifty filter graphs down to one. */
+  body.zoomed .cell:not(.active) { opacity: 0.1; }
+
+  body.zoomed .cell:not(.active) .sigil,
+  body.zoomed .cell:not(.active) .ribbon,
+  body.zoomed .cell:not(.active) .scroll,
+  body.zoomed .cell:not(.active) .tattoo-text { filter: none; }
+
+  /* and once they have finished fading, they stop being painted at all */
+  .cell { transition: opacity 0.42s ease, visibility 0s; }
+  body.zoomed .cell:not(.active) { visibility: hidden; transition: opacity 0.42s ease, visibility 0s 0.42s; }
+
+  /* The zoomed piece is straightened and un-hovered: its ribbon has to be
+     readable, and at 3x a 7-degree tilt reads as a mistake rather than as a
+     hand. */
+  body.zoomed .cell.active { --rot: 0deg; --s: 1; }
+
+  /* The sheet scales by --z, and drop-shadow radii scale with it — so a halo
+     tuned at sheet size blooms into neon at piece size. Divide it back down.
+     Every piece is a different size now, so the zoom needed to fill the
+     viewport differs per piece: --z is written by the script at zoom time
+     rather than being the one constant it used to be. */
   body.zoomed .cell.active {
     --tattoo-glow:
-      drop-shadow(0 0 0.4px rgba(22, 24, 26, 0.3))
-      drop-shadow(0 0 calc(0.8px + var(--age) * 1.6px) rgba(84, 104, 76, calc(0.16 + var(--age) * 0.24)))
-      drop-shadow(0 0 calc(2.3px + var(--age) * 4.6px) rgba(94, 111, 86, calc(0.08 + var(--age) * 0.2)))
-      drop-shadow(0.4px 0.4px 0 rgba(70, 88, 66, 0.2));
+      drop-shadow(0 0 calc(1px / var(--z)) rgba(22, 24, 26, 0.3))
+      drop-shadow(0 0 calc((2px + var(--age) * 4px) / var(--z)) rgba(84, 104, 76, calc(0.16 + var(--age) * 0.24)))
+      drop-shadow(0 0 calc((6px + var(--age) * 12px) / var(--z)) rgba(94, 111, 86, calc(0.08 + var(--age) * 0.2)))
+      drop-shadow(calc(1px / var(--z)) calc(1px / var(--z)) 0 rgba(70, 88, 66, 0.2));
   }
   body.zoomed .vignette { background: radial-gradient(ellipse 90% 90% at 50% 46%, transparent 30%, rgba(0, 0, 0, 0.8) 100%); }
 
@@ -424,9 +464,32 @@
   .reader {
     position: fixed;
     z-index: 10;
-    left: clamp(1.25rem, 5vw, 5rem);
-    bottom: clamp(1.25rem, 5vh, 4rem);
-    max-width: min(30rem, 78vw);
+    left: 0;
+    bottom: 0;
+    max-width: min(40rem, 94vw);
+    /* the sheet never scrolls; the reader is chrome, not sheet, and on a short
+       window a piece with a long build note has to go somewhere */
+    max-height: 100vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    /* The scrim is the element's own background rather than an outset
+       pseudo-element, because the moment this box can scroll it also clips,
+       and a scrim drawn outside the padding box came back as a hard-edged
+       grey rectangle laid on the sheet.
+
+       It is struck from the bottom-left CORNER, and the box is pinned to that
+       corner, for the same reason: a gradient centred in the box has to reach
+       zero before every edge or it cuts, and one that reaches zero that early
+       is too small to sit the text on. From the corner, the only two edges it
+       doesn't fade before are the two the screen ends at anyway. The inset is
+       padding. */
+    padding: 3rem 5rem clamp(1.25rem, 4vh, 3rem) clamp(1.5rem, 4vw, 4rem);
+    background: radial-gradient(
+      ellipse 122% 116% at 0% 100%,
+      rgba(239, 234, 222, 0.97) 0%,
+      rgba(239, 234, 222, 0.9) 48%,
+      rgba(239, 234, 222, 0) 82%
+    );
     opacity: 0;
     transform: translateY(0.75rem);
     pointer-events: none;
@@ -437,37 +500,100 @@
      would appear without anyone having reached for the keyboard */
   .reader:focus { outline: none; }
 
-  /* a scrim, so the reader stays legible over whatever it lands on */
-  .reader::before {
-    content: "";
-    position: absolute;
-    inset: -3rem -6rem -3.5rem -4rem;
-    z-index: -1;
-    background: radial-gradient(
-      ellipse at 32% 58%,
-      rgba(239, 234, 222, 0.96) 0%,
-      rgba(239, 234, 222, 0.88) 45%,
-      transparent 76%
-    );
-  }
-
   body.zoomed .reader { opacity: 1; transform: none; pointer-events: auto; }
 
-  .reader h2 {
-    font-family: "Grenze Gotisch", serif;
-    font-weight: 300;
-    font-size: clamp(1.9rem, 5vw, 3.2rem);
-    line-height: 1;
-    text-transform: lowercase;
-    margin-bottom: 0.5rem;
+  /* present to a screen reader, absent to everyone else */
+  .unseen {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
+  /* The reader is prose over a textured ground, and it was set in stacked
+     opacities — a 0.62 label inside a 0.82 block on cream is a suggestion of
+     text, not text. Everything here is now dark enough to read at a glance;
+     the hierarchy is carried by size and letterspacing instead.
+
+     Note the panel takes the FRESH ink, not the piece's aged ink. It inherits
+     a tier class for the sake of the ageing, but green 0.75-aged body copy on
+     an off-white ground is unreadable, and the ink encoding is the flash's
+     job — the panel is chrome. */
+  .reader { color: var(--ink-fresh); }
+
   .reader p {
+    font-size: clamp(0.9rem, 1.5vw, 1.06rem);
+    line-height: 1.45;
+    opacity: 0.94;
+    margin-bottom: 0.9rem;
+  }
+
+  /* the one-line blurb keeps the italic; the sections under it are prose and
+     would read as a pull-quote three deep */
+  .reader .lede {
     font-style: italic;
     font-size: clamp(0.95rem, 1.6vw, 1.15rem);
-    line-height: 1.45;
-    opacity: 0.82;
-    margin-bottom: 0.9rem;
+    margin-bottom: 1rem;
+  }
+
+  .reader section { margin-bottom: 0.9rem; }
+
+  .reader h3 {
+    font-size: clamp(0.72rem, 1.1vw, 0.86rem);
+    font-weight: normal;
+    font-variant: small-caps;
+    letter-spacing: 0.18em;
+    opacity: 0.72;
+    margin-bottom: 0.3rem;
+  }
+
+  .reader section p { margin-bottom: 0; }
+
+  /* the architecture, as an abstract: short lines, ruled off from each other
+     the way a sheet's notes are, rather than bulleted like a spec */
+  .reader ul {
+    list-style: none;
+    font-size: clamp(0.85rem, 1.4vw, 1rem);
+    line-height: 1.4;
+    opacity: 0.94;
+  }
+
+  .reader li {
+    padding: 0.22rem 0 0.22rem 0.9rem;
+    position: relative;
+  }
+
+  .reader li + li { border-top: 1px solid rgba(22, 24, 26, 0.18); }
+
+  .reader li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    opacity: 0.55;
+  }
+
+  /* the price line */
+  .reader .terms {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    font-size: clamp(0.78rem, 1.2vw, 0.9rem);
+    font-style: italic;
+    opacity: 0.88;
+  }
+
+  .reader .stamp {
+    font-style: normal;
+    font-variant: small-caps;
+    letter-spacing: 0.16em;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid rgba(22, 24, 26, 0.55);
+    white-space: nowrap;
   }
 
   .reader dl {
@@ -477,33 +603,39 @@
     font-size: clamp(0.78rem, 1.2vw, 0.92rem);
     font-variant: small-caps;
     letter-spacing: 0.1em;
-    opacity: 0.62;
+    opacity: 0.8;
     margin-bottom: 1rem;
   }
 
-  .reader dt { display: inline; opacity: 0.6; }
+  .reader dt { display: inline; opacity: 0.72; }
   .reader dt::after { content: " "; }
   .reader dd { display: inline; }
   .reader dl > div { white-space: nowrap; }
 
+  /* --ink-fresh, not --ink: the reader carries the piece's tier class, so
+     var(--ink) here would resolve to the aged green and the one thing on the
+     panel you are meant to click would be the faintest thing on it */
   .reader .out {
     display: inline-block;
-    color: var(--ink);
+    color: var(--ink-fresh);
     text-decoration: none;
     font-variant: small-caps;
     letter-spacing: 0.14em;
-    border-bottom: 1px solid rgba(22, 24, 26, 0.35);
+    border-bottom: 1px solid rgba(22, 24, 26, 0.5);
     padding-bottom: 0.15rem;
   }
 
-  .reader .out:hover, .reader .out:focus-visible { border-bottom-color: var(--ink); }
-  .reader .locked { font-variant: small-caps; letter-spacing: 0.14em; opacity: 0.45; }
+  .reader .out:hover, .reader .out:focus-visible { border-bottom-color: var(--ink-fresh); }
+  .reader .locked { font-variant: small-caps; letter-spacing: 0.14em; opacity: 0.7; }
 
+  /* top left, because the other three corners are spoken for: the piece takes
+     the top right, the reader the bottom left, and the bottom right is where
+     the reader spills to on a narrow screen */
   .dismiss {
     position: fixed;
     z-index: 10;
     top: clamp(1rem, 4vh, 2.5rem);
-    right: clamp(1rem, 4vw, 3rem);
+    left: clamp(1rem, 4vw, 3rem);
     font-variant: small-caps;
     letter-spacing: 0.18em;
     font-size: 0.8rem;
@@ -524,20 +656,19 @@
   .piece:focus-visible { outline: 1px dashed rgba(22, 24, 26, 0.45); outline-offset: -10px; }
 
   @media (prefers-reduced-motion: reduce) {
-    .sheet, .cell, .plate-col, .reader, .dismiss { transition: none; }
+    .sheet, .cell, .cell > *, .reader, .dismiss { transition: none; }
   }
 
-  /* Narrow portrait: the sheet stays a sheet. The centre column takes a much
-     bigger share, because the hearts are sized by the column's WIDTH — at an
-     even third of a phone screen the piece shrinks to a stamp with empty
-     space above and below it, while the outer columns have height to spare. */
-  @media (max-width: 640px) {
-    .cells { grid-template-columns: 0.62fr 1.76fr 0.62fr; }
-    .sigil { width: min(17vw, 13vh); height: min(17vw, 13vh); }
-    .piece .num { font-size: 2.6vw; }
-    .ribbon-text { font-size: 2.2vw; }
-    .ribbon-wrap { max-width: 92%; }
-    .plate-col { padding-left: 0; padding-right: 0; }
+  /* No media queries for the sheet: it is packed in px against the real
+     viewport, and the packer already draws fewer, proportionally larger pieces
+     on a small screen — a breakpoint here would fight it.
+
+     The opened state is the one thing that does need a breakpoint, and it is
+     the same 760px the zoom uses: above it the piece goes top-right and the
+     reader keeps the bottom-left beside it; below it they stack, so the reader
+     has to stay out of the top of the screen. */
+  @media (max-width: 759px) {
+    .reader { max-height: 58vh; }
   }
 </style>
 </head>
@@ -576,14 +707,6 @@
       <stop offset="55%" stop-color="#5f645d" stop-opacity="0.09" />
       <stop offset="100%" stop-color="#5f645d" stop-opacity="0" />
     </radialGradient>
-    <!-- hearts carry more grey than the project sigils do: in the reference
-         sheets the heart is a dense solid with the beading reversed out of
-         it, so a light wash reads as an unfinished outline -->
-    <linearGradient id="heart-grad" x1="0.15" y1="0" x2="0.7" y2="1">
-      <stop offset="0%" stop-color="#4c514a" stop-opacity="0.72" />
-      <stop offset="55%" stop-color="#3a3f38" stop-opacity="0.8" />
-      <stop offset="100%" stop-color="#23271f" stop-opacity="0.88" />
-    </linearGradient>
     <!-- the grey: a smooth mid-tone ramp packed inside the linework -->
     <linearGradient id="shade-grad" x1="0" y1="0" x2="0.65" y2="1">
       <stop offset="0%" stop-color="#5a5f58" stop-opacity="0.42" />
@@ -634,13 +757,13 @@
 
   <!-- flash:start -->
   <script type="application/json" id="flash-data">
-{"generated":"2026-09-02","pieces":[{"id":"smart-blinds","title":"smart blinds","banner":"Blinds that read the light and decide for themselves.","repo":"tom-gray-builds/smart-blinds","url":"https://github.com/tom-gray-builds/smart-blinds","motif":"auto","cell":1,"github":{"pushed_at":"2026-04-04T09:03:53Z","language":"JavaScript","stars":1}}]}
+{"generated":"2026-09-03","pieces":[{"id":"smart-blinds","title":"smart blinds","banner":"Blinds that read the light and decide for themselves.","problem":"The blinds shipped with an official app that drops its connection and loses track of which blind is which. This is the same hardware driven from a web page instead: scan, connect, send any blind to any position, and have it remember them next time.","build":["a static page — no framework, no build step, no dependencies","Web Bluetooth straight from the browser to the blind","speaks the MotionBlinds BLE protocol, falls back to Tuiss's own","AES-128 ECB hand-rolled in about a hundred lines","service worker precaches the lot, so it works offline"],"terms":"open","repo":"tom-gray-builds/smart-blinds","url":"https://github.com/tom-gray-builds/smart-blinds","motif":"auto","cell":1,"github":{"pushed_at":"2026-04-04T09:03:53Z","language":"JavaScript","stars":1}},{"id":"fontloop","title":"fontloop","banner":"A brief in plain English; a real typeface out.","problem":"Drawing a display face means committing a few hundred curves by hand before you find out whether the idea was any good. This turns a written brief into a style descriptor and renders the whole family from it, so an idea can be judged in seconds instead of weeks — and then compiled to a font you can actually install.","build":["the brief goes to a model, which returns a style descriptor","a parametric engine draws from it — tagged skeleton strokes, modulated pen","pen angle gives the real Didone thick/thin; authored end caps give the serifs","profile-based sidebearings space it; heavy weights auto-open their counters","every descriptor compiles to an installable .otf, re-parsed to validate"],"terms":"private","motif":"typewriter","cell":2,"github":{"pushed_at":"2026-07-28T20:45:06Z","language":"TypeScript"}},{"id":"avatars","title":"avatars","banner":"One file defines a character; everything else is generated.","problem":"An end-to-end test of how much of a consistent synthetic identity can be automated. A single definition holds a character's look, voice and world, and everything downstream — the images, the writing, the posting schedule — is derived from that one file rather than authored per post.","build":["one persona definition is the single source of truth for look, voice and scene","a diffusion model draws the images, an LLM writes the copy, both prompted from it","a reference library holds the face steady across generations","Postgres keeps the history, so it never repeats itself back at you","runs on scheduled CI — no server, and it can be driven from a phone"],"terms":"private","motif":"figure","cell":3,"github":{"pushed_at":"2026-05-06T05:33:51Z","language":"TypeScript"}}]}
   </script>
   <!-- flash:end -->
 
   <!-- jsonld:start -->
   <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"ProfilePage","name":"tom gray","url":"https://tomgray.co.uk/","mainEntity":{"@type":"Person","name":"Tom Gray","url":"https://tomgray.co.uk/","description":"Growth hacker, AI explorer.","sameAs":["https://github.com/tom-gray-builds"]},"hasPart":[{"@type":"SoftwareSourceCode","name":"smart blinds","abstract":"Blinds that read the light and decide for themselves.","codeRepository":"https://github.com/tom-gray-builds/smart-blinds","programmingLanguage":"JavaScript","dateModified":"2026-04-04"}]}
+{"@context":"https://schema.org","@type":"ProfilePage","name":"tom gray","url":"https://tomgray.co.uk/","mainEntity":{"@type":"Person","name":"Tom Gray","url":"https://tomgray.co.uk/","description":"Growth hacker, AI explorer.","sameAs":["https://github.com/tom-gray-builds"]},"hasPart":[{"@type":"SoftwareSourceCode","name":"smart blinds","abstract":"Blinds that read the light and decide for themselves.","description":"The blinds shipped with an official app that drops its connection and loses track of which blind is which. This is the same hardware driven from a web page instead: scan, connect, send any blind to any position, and have it remember them next time.","isAccessibleForFree":true,"codeRepository":"https://github.com/tom-gray-builds/smart-blinds","programmingLanguage":"JavaScript","dateModified":"2026-04-04"},{"@type":"SoftwareSourceCode","name":"fontloop","abstract":"A brief in plain English; a real typeface out.","description":"Drawing a display face means committing a few hundred curves by hand before you find out whether the idea was any good. This turns a written brief into a style descriptor and renders the whole family from it, so an idea can be judged in seconds instead of weeks — and then compiled to a font you can actually install.","isAccessibleForFree":false,"programmingLanguage":"TypeScript","dateModified":"2026-07-28"},{"@type":"SoftwareSourceCode","name":"avatars","abstract":"One file defines a character; everything else is generated.","description":"An end-to-end test of how much of a consistent synthetic identity can be automated. A single definition holds a character's look, voice and world, and everything downstream — the images, the writing, the posting schedule — is derived from that one file rather than authored per post.","isAccessibleForFree":false,"programmingLanguage":"TypeScript","dateModified":"2026-05-06"}]}
   </script>
   <!-- jsonld:end -->
 
@@ -736,15 +859,19 @@
       const lobes = [];
       const petals = 5 + Math.floor(r() * 3);
       const spin = between(r, 0, Math.PI * 2);
-      // outer lobes
+      /* Outer lobes. They are struck from a ring rather than from the dead
+         centre, and they are WIDE: petals drawn as narrow spikes back to a
+         single point cross each other in the middle and the whole thing reads
+         as an atom rather than as a flower. */
       for (let i = 0; i < petals; i++) {
         const a = spin + (i / petals) * Math.PI * 2;
-        const len = between(r, 33, 41);
-        const wid = between(r, 0.42, 0.6);
+        const len = between(r, 34, 42);
+        const wid = between(r, 0.72, 0.95);
+        const [bx, by] = polar(50, 50, a, len * 0.2);
         const [tx, ty] = polar(50, 50, a, len);
-        const [lx, ly] = polar(50, 50, a - wid, len * 0.62);
-        const [rx, ry] = polar(50, 50, a + wid, len * 0.62);
-        lobes.push(`M50 50 Q${lx} ${ly} ${tx} ${ty} Q${rx} ${ry} 50 50 Z`);
+        const [lx, ly] = polar(50, 50, a - wid, len * 0.86);
+        const [rx, ry] = polar(50, 50, a + wid, len * 0.86);
+        lobes.push(`M${bx} ${by} Q${lx} ${ly} ${tx} ${ty} Q${rx} ${ry} ${bx} ${by} Z`);
       }
       // every other petal takes the grey, so the rose has a light side
       lobes.forEach((d, i) => { if (i % 2 === 0) parts.push({ k: "shade", d }); });
@@ -786,7 +913,253 @@
       { k: "line",  d: "M22 22 L78 22 M22 78 L78 78" },
       { k: "thin",  d: "M36 68 Q50 62 64 68 L64 71 Q50 65 36 71 Z" },
       { k: "thin",  d: "M50 50 L50 66" }
-    ]
+    ],
+
+    /* ── filler forms ───────────────────────────────────────────────
+       The classic small pieces that fill the gaps on a sheet. Same four
+       part kinds as everything above, so they inherit the ink, the ageing
+       and the stencil treatment for free. */
+    heart: (r) => {
+      const H = "M50 84 C24 65 11 49 11 34 C11 20 22 12 33 12 C41 12 47 17 50 24"
+        + " C53 17 59 12 67 12 C78 12 89 20 89 34 C89 49 76 65 50 84 Z";
+      // scale a copy about the heart's visual centre, not the box origin
+      const inset = (s) => `translate(50 46) scale(${s}) translate(-50 -46)`;
+      return [
+        { k: "shade", d: H },
+        { k: "line",  d: H },
+        { k: "thin",  d: H, t: inset(0.84) },
+        // the beading runs up the middle of the rim band, between the two
+        // outlines — inset on the heart itself it reads as a second heart
+        { k: "beads", d: H, t: inset(0.92) },
+        { k: "thin",  d: starPath(between(r, 14, 24), between(r, 16, 26), between(r, 4, 7), 0.38, 4, 0) }
+      ];
+    },
+
+    anchor: () => [
+      { k: "shade", d: "M22 54 Q22 82 50 86 Q78 82 78 54 L70 54 Q70 76 50 79 Q30 76 30 54 Z" },
+      { k: "line",  d: "M50 20 L50 84" },
+      { k: "line",  d: "M50 10 m-9 0 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0" },
+      { k: "line",  d: "M30 30 L70 30" },
+      { k: "line",  d: "M22 54 Q22 82 50 86 Q78 82 78 54" },
+      { k: "line",  d: "M8 58 L22 54 L27 67" },
+      { k: "line",  d: "M92 58 L78 54 L73 67" },
+      { k: "thin",  d: "M36 25 Q50 29 64 25" },
+      { k: "solid", d: "M50 86 m-3 0 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0" }
+    ],
+
+    /* A snake is the one form here that has to be built rather than drawn:
+       the body is an outline offset either side of a wandering centre line,
+       tapering to the tail, so the coil is never the same twice. */
+    snake: (r) => {
+      const amp = between(r, 10, 18), turns = between(r, 1.4, 2.1), phase = between(r, 0, 6.2);
+      const N = 26;
+      const spine = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        spine.push([
+          50 + Math.sin(phase + t * turns * Math.PI * 2) * amp * (0.45 + t * 0.55),
+          92 - t * 70
+        ]);
+      }
+      const left = [], right = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const [x, y] = spine[i];
+        const [ax, ay] = spine[Math.max(0, i - 1)];
+        const [bx, by] = spine[Math.min(N, i + 1)];
+        // the normal to the spine, so the body keeps an even width round a bend
+        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+        const w = 2 + t * 6.5;
+        left.push([round(x - (dy / len) * w), round(y + (dx / len) * w)]);
+        right.push([round(x + (dy / len) * w), round(y - (dx / len) * w)]);
+      }
+      const body = "M" + left.map((p) => p.join(" ")).join(" L")
+        + " L" + right.reverse().map((p) => p.join(" ")).join(" L") + " Z";
+      const [hx, hy] = spine[N].map(round);
+      const parts = [{ k: "shade", d: body }, { k: "line", d: body }];
+      // belly bands, thinning toward the tail
+      for (let i = 3; i < N - 2; i += 3) {
+        parts.push({ k: "thin", d: `M${left[i][0]} ${left[i][1]} L${right[N - i][0]} ${right[N - i][1]}` });
+      }
+      parts.push(
+        { k: "line",  d: `M${hx} ${hy} m-10 -1 a10 8 0 1 0 20 0 a10 8 0 1 0 -20 0` },
+        { k: "solid", d: `M${hx - 4} ${hy - 4} m-1.8 0 a1.8 1.8 0 1 0 3.6 0 a1.8 1.8 0 1 0 -3.6 0` },
+        { k: "solid", d: `M${hx + 4} ${hy - 4} m-1.8 0 a1.8 1.8 0 1 0 3.6 0 a1.8 1.8 0 1 0 -3.6 0` },
+        { k: "thin",  d: `M${hx} ${hy - 9} L${hx} ${hy - 15} M${hx} ${hy - 15} L${hx - 5} ${hy - 19}`
+                       + ` M${hx} ${hy - 15} L${hx + 5} ${hy - 19}` }
+      );
+      return parts;
+    },
+
+    skull: () => [
+      { k: "shade", d: "M27 41 Q27 17 50 17 Q73 17 73 41 Q73 53 66 60 L34 60 Q27 53 27 41 Z" },
+      { k: "line",  d: "M27 41 Q27 17 50 17 Q73 17 73 41 Q73 53 66 60 L34 60 Q27 53 27 41 Z" },
+      { k: "solid", d: "M40 41 m-7 0 a7 8 0 1 0 14 0 a7 8 0 1 0 -14 0" },
+      { k: "solid", d: "M60 41 m-7 0 a7 8 0 1 0 14 0 a7 8 0 1 0 -14 0" },
+      { k: "solid", d: "M50 52 L45 60 L55 60 Z" },
+      { k: "line",  d: "M35 60 L35 71 Q50 80 65 71 L65 60" },
+      { k: "thin",  d: "M42 62 L42 74 M50 63 L50 76 M58 62 L58 74" },
+      { k: "thin",  d: "M32 30 Q40 24 48 24" }
+    ],
+
+    star: (r) => {
+      const R = between(r, 25, 32);
+      const big = starPath(50, 46, R, 0.4, 5, -Math.PI / 2);
+      const parts = [{ k: "shade", d: big }, { k: "line", d: big }];
+      // the facet lines that break a traditional star into planes
+      for (let i = 0; i < 5; i++) {
+        const [x, y] = polar(50, 46, -Math.PI / 2 + (i / 5) * Math.PI * 2, R);
+        parts.push({ k: "thin", d: `M50 46 L${x} ${y}` });
+      }
+      const n = 2 + Math.floor(r() * 3);
+      for (let i = 0; i < n; i++) {
+        const [x, y] = polar(50, 46, between(r, 0, Math.PI * 2), between(r, 38, 48));
+        parts.push({ k: "thin", d: starPath(x, y, between(r, 3.5, 6), 0.36, 4, between(r, 0, 3)) });
+      }
+      return parts;
+    },
+
+    horseshoe: (r) => {
+      const shoe = "M28 84 L28 46 A22 22 0 0 1 72 46 L72 84 L58 84 L58 46 A8 8 0 0 0 42 46 L42 84 Z";
+      const parts = [{ k: "shade", d: shoe }, { k: "line", d: shoe }];
+      // nails: two down each leg, two round the bend
+      const holes = [[35, 76], [65, 76], [34, 62], [66, 62], [39, 40], [61, 40]];
+      for (const [x, y] of holes) {
+        parts.push({ k: "solid", d: `M${x} ${y} m-2 0 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0` });
+      }
+      parts.push({ k: "thin", d: starPath(50, 56, between(r, 7, 10), 0.4, 5, -Math.PI / 2) });
+      return parts;
+    },
+
+    key: () => [
+      { k: "shade", d: "M50 27 m-16 0 a16 16 0 1 0 32 0 a16 16 0 1 0 -32 0" },
+      { k: "line",  d: "M50 27 m-16 0 a16 16 0 1 0 32 0 a16 16 0 1 0 -32 0" },
+      { k: "line",  d: "M50 27 m-7 0 a7 7 0 1 0 14 0 a7 7 0 1 0 -14 0" },
+      { k: "line",  d: "M50 43 L50 88" },
+      { k: "line",  d: "M50 68 L65 68 L65 77" },
+      { k: "line",  d: "M50 80 L62 80" },
+      { k: "thin",  d: "M41 16 Q50 12 59 16" }
+    ],
+
+    /* A web is drawn from a corner, because that is where it is drawn on an
+       elbow. The rings sag between the spokes — an arc of constant radius
+       reads as a dartboard. */
+    web: (r) => {
+      const ox = 8, oy = 8, spokes = 6, rings = 4, R = 96;
+      const ang = (i) => (i / (spokes - 1)) * (Math.PI / 2);
+      const parts = [];
+      for (let i = 0; i < spokes; i++) {
+        const [x, y] = polar(ox, oy, ang(i), R);
+        parts.push({ k: "thin", d: `M${ox} ${oy} L${x} ${y}` });
+      }
+      for (let j = 1; j <= rings; j++) {
+        const rad = R * (j / (rings + 0.35)) * between(r, 0.93, 1.05);
+        let d = "";
+        for (let i = 0; i < spokes - 1; i++) {
+          const [x1, y1] = polar(ox, oy, ang(i), rad);
+          const [x2, y2] = polar(ox, oy, ang(i + 1), rad);
+          const [mx, my] = polar(ox, oy, (ang(i) + ang(i + 1)) / 2, rad * 0.85);
+          d += (i ? " " : `M${x1} ${y1} `) + `Q${mx} ${my} ${x2} ${y2}`;
+        }
+        parts.push({ k: "line", d });
+      }
+      return parts;
+    },
+
+    bolt: () => [
+      { k: "shade", d: "M58 6 L26 54 L45 54 L36 94 L74 42 L54 42 Z" },
+      { k: "line",  d: "M58 6 L26 54 L45 54 L36 94 L74 42 L54 42 Z" },
+      { k: "thin",  d: "M52 20 L37 48 M60 52 L47 76" }
+    ],
+
+    /* A typewriter, three-quarters on. The parts that make it read as one
+       rather than as a box are the platen knobs standing proud either side,
+       the sheet curling out of the roller, and a keyboard that widens as it
+       comes toward you — a keyboard drawn as even rows on a flat face reads
+       as a calculator. */
+    typewriter: () => {
+      const parts = [
+        // the sheet in the roller, with two lines already struck on it
+        { k: "shade", d: "M36 2 L64 2 L64 27 L36 27 Z" },
+        { k: "line",  d: "M36 2 Q50 6 64 2 L64 27 L36 27 Z" },
+        { k: "thin",  d: "M41 11 L59 11 M41 17 L55 17" },
+        // platen
+        { k: "shade", d: "M28 28 L72 28 A7 7 0 0 1 72 42 L28 42 A7 7 0 0 1 28 28 Z" },
+        { k: "line",  d: "M28 28 L72 28 A7 7 0 0 1 72 42 L28 42 A7 7 0 0 1 28 28 Z" },
+        { k: "line",  d: "M21 35 m-8 0 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0" },
+        { k: "line",  d: "M79 35 m-8 0 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0" },
+        { k: "solid", d: "M21 35 m-2.4 0 a2.4 2.4 0 1 0 4.8 0 a2.4 2.4 0 1 0 -4.8 0" },
+        { k: "solid", d: "M79 35 m-2.4 0 a2.4 2.4 0 1 0 4.8 0 a2.4 2.4 0 1 0 -4.8 0" },
+        // the case, and the type bars fanning up out of it
+        { k: "shade", d: "M20 80 L28 44 L72 44 L80 80 Z" },
+        { k: "line",  d: "M20 80 L28 44 L72 44 L80 80 Z" },
+        { k: "thin",  d: "M50 44 L50 53 M43 45 L46 54 M57 45 L54 54" },
+        { k: "line",  d: "M14 80 L86 80 L86 90 L14 90 Z" }
+      ];
+      /* Three rows of keys, each wider and longer than the one behind it.
+         Key counts are deliberately low: a key outlined at this stroke weight
+         is nearly twice its own radius across, so a realistic ten-per-row
+         keyboard closes up into a solid bar of touching circles. Four, five,
+         six reads as a keyboard; ten reads as a grille. */
+      for (let row = 0; row < 3; row++) {
+        const y = 56 + row * 9, half = 14 + row * 4.5, n = 4 + row;
+        for (let i = 0; i < n; i++) {
+          const x = round(50 - half + (i * 2 * half) / (n - 1));
+          parts.push({ k: "line", d: `M${x} ${y} m-2 0 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0` });
+        }
+      }
+      return parts;
+    },
+
+    /* A stick figure — and, standing behind it in thinner line, the same one
+       again. One drawing, generated twice. */
+    figure: (r) => {
+      const body = [
+        { k: "line", d: "M50 22 m-13 0 a13 13 0 1 0 26 0 a13 13 0 1 0 -26 0" },
+        { k: "line", d: "M50 35 L50 68" },
+        { k: "line", d: "M25 51 Q50 43 75 51" },
+        { k: "line", d: "M50 68 L33 92" },
+        { k: "line", d: "M50 68 L67 92" },
+        { k: "line", d: "M33 92 L26 92" },
+        { k: "line", d: "M67 92 L74 92" }
+      ];
+      /* The copy is drawn first, so the original stands in front of it — and
+         it is drawn SMALL and well clear, standing further back rather than
+         alongside. An offset twin at nearly the same size reads as a
+         double-exposure or a smudge, not as a second figure; put it at 0.62
+         with its feet higher up the paper and the depth does the work. */
+      const behind = "translate(26 10) translate(50 50) scale(0.62) translate(-50 -50)";
+      const parts = body.map((p) => ({ k: "thin", d: p.d, t: behind }));
+      parts.push({ k: "shade", d: "M50 22 m-13 0 a13 13 0 1 0 26 0 a13 13 0 1 0 -26 0" });
+      parts.push(...body);
+      // it is lit from somewhere off to the left, clear of the figure behind
+      const n = 2 + Math.floor(r() * 2);
+      for (let i = 0; i < n; i++) {
+        const [x, y] = polar(50, 30, between(r, Math.PI * 1.05, Math.PI * 1.75), between(r, 26, 34));
+        parts.push({ k: "thin", d: starPath(x, y, between(r, 3.5, 6), 0.36, 4, between(r, 0, 3)) });
+      }
+      return parts;
+    },
+
+    cherry: (r) => {
+      const A = [33, 71], B = [67, 76], R = 15;
+      const disc = ([x, y], rad) => `M${x} ${y} m-${rad} 0 a${rad} ${rad} 0 1 0 ${rad * 2} 0 a${rad} ${rad} 0 1 0 -${rad * 2} 0`;
+      const stalk = [50, 16];
+      return [
+        { k: "shade", d: disc(A, R) },
+        { k: "shade", d: disc(B, R) },
+        { k: "line",  d: disc(A, R) },
+        { k: "line",  d: disc(B, R) },
+        // the two highlights are what make them read as fruit and not as dots
+        { k: "thin",  d: `M${A[0] - 7} ${A[1] - 6} Q${A[0] - 3} ${A[1] - 11} ${A[0] + 2} ${A[1] - 10}` },
+        { k: "thin",  d: `M${B[0] - 7} ${B[1] - 6} Q${B[0] - 3} ${B[1] - 11} ${B[0] + 2} ${B[1] - 10}` },
+        { k: "line",  d: `M${stalk[0]} ${stalk[1]} Q${between(r, 30, 38)} ${between(r, 34, 44)} ${A[0]} ${A[1] - R}` },
+        { k: "line",  d: `M${stalk[0]} ${stalk[1]} Q${between(r, 62, 70)} ${between(r, 36, 48)} ${B[0]} ${B[1] - R}` },
+        { k: "shade", d: `M50 16 C60 6 74 6 82 12 C72 22 58 24 50 16 Z` },
+        { k: "line",  d: `M50 16 C60 6 74 6 82 12 C72 22 58 24 50 16 Z` },
+        { k: "thin",  d: `M52 15 Q66 12 80 12` }
+      ];
+    }
   };
 
   const MOTIF_NAMES = Object.keys(MOTIFS);
@@ -803,8 +1176,23 @@
     ["eye",       ["watch", "monitor", "observ", "detect", "vision", "see", "analytic", "track", "scan", "read"]],
     ["hourglass", ["time", "schedul", "cron", "delay", "wait", "clock", "timer", "history", "log"]],
     ["swallow",   ["fast", "speed", "deploy", "ship", "send", "deliver", "message", "route", "sync", "travel"]],
-    ["rose",      ["design", "type", "font", "generat", "art", "draw", "render", "craft", "growth", "bloom"]],
-    ["dagger",    ["secur", "auth", "cut", "sharp", "kill", "strip", "parse", "split", "tool", "cli"]]
+    // typewriter before rose: rose owns the broad making-things words, but
+    // anything specifically about letterforms should get the machine that
+    // makes them rather than a flower
+    ["typewriter", ["font", "typeface", "typograph", "glyph", "letter", "serif", "kern", "text", "write", "print"]],
+    ["figure",    ["avatar", "persona", "profile", "identity", "character", "portrait", "who", "people", "person"]],
+    ["rose",      ["design", "generat", "art", "draw", "render", "craft", "growth", "bloom"]],
+    ["dagger",    ["secur", "auth", "cut", "sharp", "kill", "strip", "parse", "split", "tool", "cli"]],
+    ["key",       ["key", "secret", "token", "vault", "password", "unlock", "access", "crypt", "cred"]],
+    ["web",       ["web", "site", "html", "css", "browser", "crawl", "scrape", "spider", "network"]],
+    ["anchor",    ["store", "persist", "db", "sql", "host", "infra", "server", "backup", "stable", "anchor"]],
+    ["snake",     ["python", "snake", "chain", "queue", "pipe", "stream", "coil", "venom"]],
+    ["skull",     ["dead", "legacy", "archiv", "retire", "danger", "bone", "crash", "fail", "abandon"]],
+    ["star",      ["star", "rate", "rank", "score", "award", "favourite", "favorite", "best", "top"]],
+    ["horseshoe", ["luck", "random", "chance", "bet", "gambl", "odds", "roll", "shuffle"]],
+    ["bolt",      ["power", "energy", "electric", "volt", "charge", "battery", "grid", "watt"]],
+    ["cherry",    ["food", "recipe", "fruit", "shop", "cart", "commerce", "pair", "sweet"]],
+    ["heart",     ["love", "social", "friend", "health", "care", "like", "match", "family"]]
   ];
 
   function resolveMotif(piece, r) {
@@ -827,8 +1215,13 @@
     return d + " Z";
   }
 
-  /* ── the sigil ────────────────────────────────────────────────────── */
-  function sigil(id, motifName) {
+  /* ── the sigil ──────────────────────────────────────────────────────
+     `weight` is how much shading the piece can carry, from 1 (full) down to
+     0 (none at all — a stencil, which hides its shading in CSS anyway, so
+     drawing it would be several hundred nodes a sheet that never get
+     painted). It scales the detail, never the drawing. */
+  function sigil(id, motifName, weight) {
+    const w = weight === undefined ? 1 : weight;
     const r = rng(hash(id));
     const name = (motifName && motifName !== "auto" && MOTIFS[motifName])
       ? motifName
@@ -839,7 +1232,7 @@
 
     // grey wash: soft blobs behind the linework
     let wash = "";
-    const blobs = 2 + Math.floor(r() * 2);
+    const blobs = w ? Math.max(1, Math.round((2 + Math.floor(r() * 2)) * w)) : 0;
     for (let i = 0; i < blobs; i++) {
       wash += `<ellipse class="wash" cx="${round(between(r, 40, 60))}" cy="${round(between(r, 40, 60))}"`
         + ` rx="${round(between(r, 19, 29))}" ry="${round(between(r, 16, 25))}"`
@@ -849,7 +1242,7 @@
     // stipple: whip-shading dots, packed toward the middle so the shading
     // sits under the subject rather than sprayed across the whole cell
     let stipple = "";
-    const dots = 34 + Math.floor(r() * 26);
+    const dots = Math.round((34 + Math.floor(r() * 26)) * w);
     for (let i = 0; i < dots; i++) {
       const a = r() * Math.PI * 2;
       const rad = Math.pow(r(), 0.75) * 36;
@@ -857,7 +1250,8 @@
       stipple += `<circle class="stipple" cx="${x}" cy="${y}" r="${round(between(r, 0.3, 0.95))}"/>`;
     }
 
-    const lines = parts.map((p) => `<path class="${p.k}" d="${p.d}"/>`).join("");
+    const lines = parts.map((p) =>
+      `<path class="${p.k}" d="${p.d}"${p.t ? ` transform="${p.t}"` : ""}/>`).join("");
 
     return `<svg class="sigil" viewBox="0 0 100 100" aria-hidden="true">`
       + `<g>${wash}</g><g>${stipple}</g>`
@@ -874,17 +1268,12 @@
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  /* ── the three hearts ─────────────────────────────────────────────
-     The subtitle as flash: three hearts, each crossed by a banner. Unlike
-     the project sigils this is NOT seeded — it is the identity mark, so
-     it is hand-placed and identical on every load. */
-  const TAGLINES = ["growth hacker", "ai explorer", "tatted human"];
-
-  const HEART = "M50 88 C22 68 8 50 8 34 C8 19 20 10 32 10 "
-    + "C40 10 47 15 50 22 C53 15 60 10 68 10 C80 10 92 19 92 34 C92 50 78 68 50 88 Z";
-
-  // scale a copy of the heart about its visual centre, not the box origin
-  const about = (s) => `translate(50 47) scale(${s}) translate(-50 -47)`;
+  /* ── the name plate ───────────────────────────────────────────────
+     The subtitle as flash: one scroll banner under the name, foliage either
+     side. Unlike the project sigils this is NOT seeded off a project id —
+     it is the identity mark, so it is hand-placed and identical on every
+     load. */
+  const TAGLINE = "growth hacker // ai explorer";
 
   /* A leaf. Deliberately asymmetric: the two sides take different control
      offsets and the tip bends, so no two read as the same stamp. The midrib
@@ -956,18 +1345,21 @@
     return d;
   }
 
-  /* The banner: a scroll that curves across the heart and rolls up at both
-     ends. Narrower than the heart is wide — in the reference the heart is
-     the subject and the banner crosses it, not the other way round. */
-  function banner(i, text) {
-    const HW = 46, T = 19, R = 13;
-    const band = `M${-HW} ${-T / 2} Q0 ${round(-T / 2 - 8)} ${HW} ${-T / 2}`
-      + ` L${HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${-HW} ${T / 2} Z`;
+  /* The banner: a scroll that sags across its width and rolls up at both
+     ends. HW is the half-width of the flat span, before the rolls. */
+  function banner(i, text, halfWidth) {
+    const HW = halfWidth || 46, T = 19, R = 13;
+    // SAG is the one number that sets how much the ribbon bows. Both edges,
+    // the shading and the lettering are all derived from it, so the band
+    // cannot end up curving by one amount and its text by another.
+    const SAG = 8;
+    const band = `M${-HW} ${-T / 2} Q0 ${round(-T / 2 - SAG)} ${HW} ${-T / 2}`
+      + ` L${HW} ${T / 2} Q0 ${round(T / 2 - SAG)} ${-HW} ${T / 2} Z`;
 
     let out = `<path class="band" d="${band}"/>`;
     // the underside of the sag catches the shadow
-    out += `<path class="band-shade" d="M${-HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${HW} ${T / 2}`
-      + ` L${HW} ${round(T / 2 - 3)} Q0 ${round(T / 2 - 11)} ${-HW} ${round(T / 2 - 3)} Z"/>`;
+    out += `<path class="band-shade" d="M${-HW} ${T / 2} Q0 ${round(T / 2 - SAG)} ${HW} ${T / 2}`
+      + ` L${HW} ${round(T / 2 - 3)} Q0 ${round(T / 2 - SAG - 3)} ${-HW} ${round(T / 2 - 3)} Z"/>`;
 
     for (const dir of [-1, 1]) {
       const cx = round(dir * (HW + R * 0.72)), cy = round(T * 0.16);
@@ -982,70 +1374,49 @@
     }
 
     out += `<path class="ink" d="${band}"/>`;
-    out += `<path id="bnr-${i}" fill="none" d="M${-HW + 5} 1 Q0 ${round(-T / 2 - 3)} ${HW - 5} 1"/>`;
+
+    /* The lettering rides the band's own CENTRE LINE — which, given both
+       edges bow by SAG, is `M-HW 0 Q0 -SAG HW 0`.
+
+       The text stops short of the ends so the letters stay clear of the
+       rolls, and that inset is the trap: shortening the span while keeping
+       the same control point makes a TIGHTER curve, not the same one. That
+       is what had the words arcing half again as hard as the ribbon carrying
+       them. So take the true sub-curve of the centre line between the two
+       inset points instead of redrawing a shorter quadratic by eye.
+
+       For this curve x(t) = HW(2t - 1), so x reaches -HW+E at t = E/2HW, and
+       the sub-curve's own control point follows from the standard quadratic
+       subdivision. LIFT is a constant added to every y, so it slides the run
+       of text up or down without touching its curvature — it exists because
+       `dominant-baseline: middle` sits a shade high in Sancreek. */
+    const E = 5, LIFT = 2.2;
+    const t0 = E / (2 * HW), t1 = 1 - t0;
+    const endY = round(2 * (1 - t0) * t0 * -SAG + LIFT);
+    const ctrlY = round(((1 - t0) * t1 + (1 - t1) * t0) * -SAG + LIFT);
+    out += `<path id="bnr-${i}" fill="none" d="M${-HW + E} ${endY} Q0 ${ctrlY} ${HW - E} ${endY}"/>`;
     out += `<text class="btext" font-size="13" text-anchor="middle" dominant-baseline="middle">`
       + `<textPath href="#bnr-${i}" startOffset="50%">${esc(text)}</textPath></text>`;
     return out;
   }
 
-  /* One heart. The structure is the thing the reference gets right and a
-     naive version misses: an outer outline, then a RIM BAND, then an inner
-     outline, then the body — with the beading running up the middle of the
-     rim rather than floating inset on the heart. */
-  function heartUnit(i, text, rot) {
-    const RIM = 0.845, DOTS = 0.925;
-    return `<g transform="translate(-50 -47)">`
-      + `<path class="rim" d="${HEART}"/>`
-      + `<path class="body" d="${HEART}" transform="${about(RIM)}"/>`
-      // shading: a lighter copy pushed down-right leaves a dark crescent
-      // hugging the top and left inner edge, which is where the shadow goes
-      + `<clipPath id="hc-${i}"><path d="${HEART}" transform="${about(RIM)}"/></clipPath>`
-      + `<g clip-path="url(#hc-${i})">`
-      + `<path class="body-lit" d="${HEART}" transform="translate(7 9) ${about(RIM * 0.99)}"/>`
-      + `</g>`
-      + `<path class="ink" d="${HEART}"/>`
-      + `<path class="ink" d="${HEART}" transform="${about(RIM)}"/>`
-      + `<path class="beads" d="${HEART}" transform="${about(DOTS)}"/>`
-      + `</g>`;
-  }
-
-  function heartsSVG(lines) {
-    // Hand-placed. The stagger and the overlap are the whole trick: spaced
-    // evenly on a centre line this reads as three rows of a table, not as
-    // one piece of flash.
+  /* The scroll under the name: one banner, a sprig either side and a flower
+     tucked into each corner. Foliage is drawn first so only its tips show
+     past the ribbon — a scroll floating clear of its leaves reads as two
+     drawings that happen to be near each other. */
+  function plateSVG(text) {
     const r = rng(hash("plate"));
-    const S = 1.72;
-    const LAY = [
-      { cx: 172, cy: 96,  rot: -12 },
-      { cx: 196, cy: 214, rot: 9 },
-      { cx: 164, cy: 332, rot: -11 }
-    ];
     let out = "";
+    out += `<g transform="translate(-86 14) rotate(-40) scale(1.2)">${sprig(r, 40, 4, true)}</g>`;
+    out += `<g transform="translate(86 14) rotate(40) scale(1.2)">${sprig(r, 40, 4, false)}</g>`;
+    out += `<g transform="translate(-104 -8) rotate(-14) scale(1.1)">${sprig(r, 30, 3, true)}</g>`;
+    out += `<g transform="translate(104 -8) rotate(14) scale(1.1)">${sprig(r, 30, 3, false)}</g>`;
+    out += banner(0, text, 74);
+    out += `<g transform="translate(-102 16) scale(0.85)">${flower(r, 12)}</g>`;
+    out += `<g transform="translate(102 16) scale(0.8)">${flower(r, 11)}</g>`;
 
-    // foliage first, so only the tips show past the hearts
-    out += `<g transform="translate(104 78) rotate(-38) scale(1.5)">${sprig(r, 56, 5, true)}</g>`;
-    out += `<g transform="translate(246 56) rotate(24) scale(1.45)">${sprig(r, 54, 5, false)}</g>`;
-    out += `<g transform="translate(284 196) rotate(34) scale(1.35)">${sprig(r, 50, 4, false)}</g>`;
-    out += `<g transform="translate(88 210) rotate(-32) scale(1.4)">${sprig(r, 52, 4, true)}</g>`;
-    out += `<g transform="translate(268 330) rotate(30) scale(1.4)">${sprig(r, 52, 5, false)}</g>`;
-    out += `<g transform="translate(78 322) rotate(-28) scale(1.3)">${sprig(r, 48, 4, true)}</g>`;
-
-    lines.forEach((text, i) => {
-      const L = LAY[i];
-      out += `<g transform="translate(${L.cx} ${L.cy}) scale(${S})">`
-        + heartUnit(i, text, L.rot)
-        // +21 puts the band across the lower third, as the reference does
-        + `<g transform="translate(0 21) rotate(${L.rot})">${banner(i, text)}</g>`
-        + `</g>`;
-    });
-
-    // flowers sit on top, tucked against the hearts
-    out += `<g transform="translate(262 108) scale(1.55)">${flower(r, 18)}</g>`;
-    out += `<g transform="translate(92 240) scale(1.5)">${flower(r, 17)}</g>`;
-    out += `<g transform="translate(280 306) scale(1.3)">${flower(r, 15)}</g>`;
-
-    return `<svg class="hearts" viewBox="0 0 360 440" preserveAspectRatio="xMidYMid meet"`
-      + ` role="img" aria-label="${esc(lines.join(", "))}">${out}</svg>`;
+    return `<svg class="scroll" viewBox="-124 -40 248 78" preserveAspectRatio="xMidYMid meet"`
+      + ` role="img" aria-label="${esc(text)}">${out}</svg>`;
   }
 
   /* ── age → tier ───────────────────────────────────────────────────
@@ -1072,83 +1443,310 @@
     return Math.round(days / 365) + " years ago";
   }
 
-  const ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix"];
+  const ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii"];
+
+  const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 
   /* ── build the sheet ──────────────────────────────────────────────── */
   const data = JSON.parse(document.getElementById("flash-data").textContent);
-  const pieces = data.pieces || [];
-  const byCell = new Map(pieces.map((p) => [p.cell, p]));
   const cellsEl = document.getElementById("cells");
 
-  const cellNodes = new Map();
-  let slotIndex = 0;
+  /* `cell` in projects.json used to be a position on a 3x3 grid. There is no
+     grid any more, so it survives as a running ORDER: it decides which piece
+     is numbered i, and the earlier a piece comes the sooner the packer gets
+     to choose its spot — which is to say the better the spot. Nothing needs
+     migrating, and no value is invalid. */
+  const pieces = (data.pieces || []).slice()
+    .sort((a, b) => (a.cell || 99) - (b.cell || 99) || String(a.id).localeCompare(String(b.id)));
 
-  // Resolve every real piece's motif up front, so the empty slots can avoid
-  // drawing the same shape a piece is already using. Without this a stencil
-  // can land directly under its own inked twin, which reads as a duplicate
-  // rather than as a spare slot.
+  const nodes = new Map();   // item key -> element
+
+  // Resolve every real piece's motif up front so the filler can avoid drawing
+  // a shape the work is already using: a stencil sitting a few inches from
+  // its own inked twin reads as a duplicate, not as a spare slot.
   const motifOf = new Map(pieces.map((p) => [p.id, resolveMotif(p, rng(hash(p.id)))]));
   const taken = new Set(motifOf.values());
-  const slotMotifs = MOTIF_NAMES.filter((m) => !taken.has(m));
-  const slotPool = slotMotifs.length ? slotMotifs : MOTIF_NAMES;
+  const unused = MOTIF_NAMES.filter((m) => !taken.has(m));
+  const fillerPool = unused.length >= 6 ? unused : MOTIF_NAMES;
 
-  // The name plate now owns the whole centre column, so cells 2, 5 and 8 no
-  // longer exist as project slots. Cell numbers still mean the grid positions
-  // they always did, so projects.json needs no migration.
-  const PLATE_CELLS = new Set([2, 5, 8]);
+  /* ── the filler ───────────────────────────────────────────────────
+     Every flash sheet is mostly filler: small traditional pieces packed into
+     the gaps so the paper reads as used. These are placeholders in the
+     literal sense — they hold space for work that isn't on the sheet yet —
+     so they carry no title, no link and no meaning: unlike a project's
+     sigil, nothing here is standing for anything.
 
-  const plateCol = document.createElement("div");
-  // tier 0: identity, not data. It must not drift green with the projects.
-  plateCol.className = "plate-col t0";
-  plateCol.innerHTML = `<h1 class="name tattoo-text">tom gray</h1>` + heartsSVG(TAGLINES);
-  cellsEl.appendChild(plateCol);
+     None of it is inked — every one is a pencil stencil (see .slot). That is
+     what tells you which pieces are real: ink means work, and work opens.
 
-  for (const p of pieces) {
-    if (PLATE_CELLS.has(p.cell)) {
-      console.warn(`projects.json: "${p.id}" is on cell ${p.cell}, which the name `
-        + `plate now occupies. Use one of 1, 3, 4, 6, 7, 9.`);
+     The fade is seeded from each piece's OWN key rather than drawn from the
+     layout's stream, so a re-pack at a different window size can add or drop
+     filler without every other piece changing weight.
+
+     The SHAPES are dealt from a shuffled deck rather than picked at random,
+     one deck per pass through the vocabulary. Picking each independently is
+     what randomness actually looks like — which is to say seven lightning
+     bolts and no skull. Dealing guarantees every form appears about as often
+     as every other, and reshuffling between passes keeps the repeat from
+     landing on a visible period. */
+  const DECK = [];
+  function motifAt(i) {
+    while (DECK.length <= i) {
+      const r = rng(hash("deck-" + Math.floor(DECK.length / fillerPool.length)));
+      const deck = fillerPool.slice();
+      for (let k = deck.length - 1; k > 0; k--) {
+        const j = Math.floor(r() * (k + 1));
+        [deck[k], deck[j]] = [deck[j], deck[k]];
+      }
+      DECK.push(...deck);
     }
+    return DECK[i];
   }
 
-  let numeral = 0;
+  const fillerSpec = (key, i) => {
+    const r = rng(hash(key));
+    return { motif: motifAt(i), fade: round(between(r, 0.3, 0.58)) };
+  };
 
-  for (let n = 1; n <= 9; n++) {
-    if (PLATE_CELLS.has(n)) continue;
+  const SHEET_SEED = hash("flash-sheet-layout");
 
-    const cell = document.createElement("div");
-    cell.className = "cell";
-    cell.dataset.cell = String(n);
-    cell.style.gridColumn = String(((n - 1) % 3) + 1);
-    cell.style.gridRow = String(Math.floor((n - 1) / 3) + 1);
+  /* What wants to go on the paper, biggest first — which is also the order a
+     sheet is actually drawn in. Sizes are fractions of u = sqrt(W*H), so the
+     NUMBER of pieces needed to fill the sheet is the same at any resolution;
+     what changes is physical size, and on a phone twenty-six of these would
+     each be a postage stamp. Hence `gain`: fewer pieces, drawn bigger. */
+  function buildItems(W, H) {
+    const u = Math.sqrt(W * H);
+    const gain = u < 620 ? 1.7 : u < 800 ? 1.4 : u < 1000 ? 1.18 : 1;
+    // the tiers already account for the bigger pieces `gain` draws — a second
+    // reduction on top of them empties the sheet
+    const count = gain > 1.6 ? 22 : gain > 1.3 ? 32 : gain > 1.1 ? 42 : 56;
+    const r = rng(SHEET_SEED);
+    const items = [];
 
-    if (byCell.has(n)) {
-      const p = byCell.get(n);
-      const tier = tierFor(p.github && p.github.pushed_at);
-      cell.classList.add("t" + tier);
-      cell.dataset.id = p.id;
-      cell.innerHTML =
+    // The signature scales with everything else, but not past a share of the
+    // paper: on a narrow window `gain` would otherwise hand it three quarters
+    // of the width and the sheet becomes a headed letter.
+    const pw = Math.min(u * 0.36 * gain, W * 0.56, H * 0.62);
+    // 0.55 is the name's line plus the scroll's aspect — the box is drawn to
+    // its contents so the plate doesn't reserve paper it isn't using
+    items.push({ key: "plate", kind: "plate", w: pw, h: pw * 0.55, rot: between(r, -4, 4), home: "top" });
+
+    pieces.forEach((p, i) => {
+      const w = u * between(r, 0.185, 0.22) * gain;
+      items.push({
+        key: p.id, kind: "piece", piece: p, numeral: i,
+        w, h: w * 1.16, rot: between(r, -8, 8), home: "inner"
+      });
+    });
+
+    // A quarter of it is big enough to hold its own next to the work, and the
+    // rest steps down to pieces small enough to drop into a corner. A sheet
+    // drawn all at one size is a catalogue page.
+    for (let i = 0; i < count; i++) {
+      const t = i / count;
+      const s = (t < 0.25 ? between(r, 0.15, 0.19)
+        : t < 0.6 ? between(r, 0.11, 0.145)
+        : between(r, 0.075, 0.105)) * gain;
+      const w = u * s;
+      items.push({
+        key: "filler-" + i, kind: "filler", index: i,
+        w, h: w, rot: between(r, -18, 18),
+        weight: clamp(s / (0.16 * gain), 0.3, 1)
+      });
+    }
+
+    return items;
+  }
+
+  /* ── packing the sheet ────────────────────────────────────────────
+     Boxes, not a grid: each piece gets a pile of seeded random candidate
+     positions and takes the best one that doesn't touch anything already
+     down. "Best" is the interesting part.
+
+     Taking the candidate FURTHEST from its neighbours is ordinary blue
+     noise, and it looks it — evenly spaced, which is a grid with the ruler
+     rubbed out. Taking the NEAREST packs pieces against each other the way
+     filler really does get drawn into gaps, but on its own it grows one dense
+     blob and leaves the margins bare.
+
+     So most pieces aim for a TARGET gap instead — close to the nearest thing
+     already down, but not touching it — and the rest are explorers that take
+     the emptiest spot they can find and start a new cluster somewhere else on
+     the paper. Snugglers plus a few explorers fills a sheet evenly without
+     ever lining anything up. */
+  function packSheet(items, W, H) {
+    const r = rng(SHEET_SEED ^ 0x9e3779b9);
+    const u = Math.sqrt(W * H);
+    const edge = u * 0.008;    // margin of clean paper round the sheet
+    const gap = u * 0.011;     // air between two pieces
+    const placed = [];
+    const out = [];
+
+    const clear = (x, y, w, h) => !placed.some((p) =>
+      Math.abs(x - p.x) < (w + p.w) / 2 + gap && Math.abs(y - p.y) < (h + p.h) / 2 + gap);
+
+    const nearest = (x, y) => {
+      let d = Infinity;
+      for (const p of placed) d = Math.min(d, Math.hypot(x - p.x, y - p.y));
+      return d;
+    };
+
+    for (const it of items) {
+      let w = it.w, h = it.h, spot = null;
+      const explorer = r() < 0.22;
+
+      // Five goes, each a little smaller. A tattooer redraws the filler to
+      // fit the gap rather than leaving the gap.
+      for (let attempt = 0; attempt < 5 && !spot; attempt++) {
+        if (attempt) { w *= 0.86; h *= 0.86; }
+
+        // the work sits in from the edges; filler is allowed the margins
+        const keep = it.home === "inner" ? 0.08 : 0;
+        const x0 = Math.max(edge + w / 2, W * keep), x1 = Math.min(W - edge - w / 2, W * (1 - keep));
+        const y0 = Math.max(edge + h / 2, H * keep), y1 = Math.min(H - edge - h / 2, H * (1 - keep));
+        if (x1 < x0 || y1 < y0) continue;
+
+        if (it.home === "top") {
+          // The signature goes where the signature goes: across the top of the
+          // paper, centred, the way a sheet is headed. It is placed before
+          // anything else, so the rest of the sheet packs in underneath it.
+          spot = {
+            x: clamp(W * between(r, 0.44, 0.56), x0, x1),
+            y: clamp(y0 + between(r, 0, H * 0.03), y0, y1)
+          };
+          break;
+        }
+
+        // how far from its nearest neighbour's centre this piece would like
+        // to sit: its own half-width plus a nudge, i.e. shoulder to shoulder
+        const want = w * 0.62 + gap;
+        const pool = [];
+        let fallback = null, fallbackScore = -Infinity;
+
+        // Collect a SMALL shortlist of workable spots and choose within it,
+        // rather than scoring every candidate on the sheet. Scoring all of
+        // them makes the preference absolute — a snuggler would then reject
+        // open paper every single time, and the sheet fills from wherever the
+        // first piece landed outward, leaving whole margins bare. Twelve
+        // candidates keeps the preference local: the coverage stays uniformly
+        // random, the choice within it stays deliberate.
+        for (let k = 0; k < 400 && pool.length < 12; k++) {
+          const x = between(r, x0, x1), y = between(r, y0, y1);
+          const d = nearest(x, y);
+          // remember the roomiest candidate even if it collides — the work
+          // must land somewhere, and a piece dropped for want of space is
+          // worse than one that crowds a bit of filler
+          if (d > fallbackScore) { fallbackScore = d; fallback = { x, y }; }
+          if (clear(x, y, w, h)) pool.push({ x, y, d });
+        }
+
+        let score = Infinity;
+        for (const c of pool) {
+          const s = explorer ? -c.d : Math.abs(c.d - want);
+          if (s < score) { score = s; spot = { x: c.x, y: c.y }; }
+        }
+
+        if (!spot && attempt === 4 && it.kind !== "filler") spot = fallback;
+      }
+
+      if (!spot) continue;   // no room: this filler simply isn't drawn
+      placed.push({ x: spot.x, y: spot.y, w, h });
+      out.push(Object.assign({}, it, { x: spot.x, y: spot.y, w, h }));
+    }
+
+    /* Centre the finished composition on the paper. Packing stops when it
+       runs out of pieces, not when it runs out of room, so whatever margin is
+       left over ends up bunched against one or two edges — an inch of clean
+       paper along the bottom and none along the top reads as a sheet that ran
+       out, rather than as one that was composed. Splitting the leftover
+       evenly costs one pass and cannot introduce an overlap. */
+    if (out.length) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const o of out) {
+        minX = Math.min(minX, o.x - o.w / 2); maxX = Math.max(maxX, o.x + o.w / 2);
+        minY = Math.min(minY, o.y - o.h / 2); maxY = Math.max(maxY, o.y + o.h / 2);
+      }
+      const dx = ((W - maxX) - minX) / 2, dy = ((H - maxY) - minY) / 2;
+      for (const o of out) { o.x += dx; o.y += dy; }
+    }
+
+    return out;
+  }
+
+  /* ── drawing a piece ──────────────────────────────────────────────── */
+  function nodeFor(it) {
+    const el = document.createElement("div");
+
+    if (it.kind === "plate") {
+      /* The plate is PINNED to a tier rather than computed from a date: it is
+         identity, not data, so nothing about it should move on its own.
+
+         Pinned to 3, not 0. Tier 0 is fresh linework — thin, crisp, barely
+         any bleed — and next to a settled piece of work it read as unfinished
+         rather than as restrained. Tier 3 is the look the sheet is after: ink
+         that has spread, softened and drifted toward olive, with the
+         sub-dermal halo under it. The name is the oldest thing on the paper;
+         it should look it. */
+      el.className = "cell plate t3";
+      el.innerHTML = `<div class="plate-in">`
+        + `<h1 class="name tattoo-text">tom gray</h1>`
+        + plateSVG(TAGLINE)
+        + `</div>`;
+    } else if (it.kind === "piece") {
+      const p = it.piece;
+      el.className = "cell work t" + tierFor(p.github && p.github.pushed_at);
+      el.dataset.id = p.id;
+      el.innerHTML =
         `<a class="piece" href="#${encodeURIComponent(p.id)}" aria-label="${esc(p.title)}">`
-        + `<span class="num">${ROMAN[numeral]}</span>`
+        + `<span class="num">${ROMAN[it.numeral] || it.numeral + 1}</span>`
         + sigil(p.id, motifOf.get(p.id))
         + ribbon(p.title)
         + `</a>`;
     } else {
-      // an empty slot: pencil stencil, never inked. Motifs are dealt round
-      // robin rather than seeded — left to the hash, several of the cells
-      // collide on the same shape and the sheet looks like a mistake.
-      cell.classList.add("slot");
-      const motif = slotPool[slotIndex++ % slotPool.length];
-      cell.innerHTML = `<div aria-hidden="true">${sigil("slot-" + n, motif)}</div>`;
+      const f = fillerSpec(it.key, it.index);
+      el.className = "cell filler slot";
+      el.style.setProperty("--fade", f.fade);
+      el.setAttribute("aria-hidden", "true");
+      // weight 0: a stencil hides its wash and stipple, so drawing them is
+      // several hundred DOM nodes per sheet that nothing will ever paint
+      el.innerHTML = `<div>${sigil(it.key, f.motif, 0)}</div>`;
     }
 
-    numeral++;
-    cellNodes.set(n, cell);
-    cellsEl.appendChild(cell);
+    return el;
   }
 
-  /* Fit each banner's lettering to its own ribbon. The three phrases are
-     different lengths and Alfa Slab One is wide, so a fixed font-size would
-     either overflow the shortest banner or under-fill the longest.
+  /* Lay the sheet out against the live viewport. Nodes are kept and reused
+     across re-packs — only the box moves. Redrawing them would re-run every
+     sigil, and the drawing is the expensive half. */
+  function render() {
+    const W = innerWidth, H = innerHeight;
+    const items = packSheet(buildItems(W, H), W, H);
+    const drawn = new Set();
+
+    for (const it of items) {
+      let el = nodes.get(it.key);
+      if (!el) { el = nodeFor(it); nodes.set(it.key, el); cellsEl.appendChild(el); }
+      el.style.display = "";
+      el.style.left = round(it.x - it.w / 2) + "px";
+      el.style.top = round(it.y - it.h / 2) + "px";
+      el.style.width = round(it.w) + "px";
+      el.style.height = round(it.h) + "px";
+      el.style.setProperty("--u", round(it.w) + "px");
+      el.style.setProperty("--rot", round(it.rot) + "deg");
+      drawn.add(it.key);
+    }
+
+    // a smaller window asks for fewer pieces; whatever it dropped comes off
+    // the paper rather than out of the DOM, so it costs nothing to bring back
+    for (const [key, el] of nodes) if (!drawn.has(key)) el.style.display = "none";
+  }
+
+  render();
+
+  /* Fit the banner's lettering to its scroll. Sancreek is wide, so a fixed
+     font-size either overflows the ribbon or under-fills it depending on the
+     phrase.
 
      The measurement has to happen on a DETACHED text element, not on the
      textPath itself: text that overruns its path is clipped at both ends,
@@ -1159,7 +1757,7 @@
      Runs after fonts.ready; measuring before the webfont lands gives
      fallback metrics and the wrong answer. */
   function fitBanners() {
-    const svg = document.querySelector(".hearts");
+    const svg = document.querySelector(".scroll");
     if (!svg) return;
     const NS = "http://www.w3.org/2000/svg";
     const probe = document.createElementNS(NS, "text");
@@ -1168,10 +1766,10 @@
     probe.setAttribute("y", "-9999");
     svg.appendChild(probe);
 
-    // Two passes, so all three banners end up at ONE size. Fitting each to
-    // its own ribbon independently is what a layout engine would do, but it
-    // makes the lettering step between banners on a single piece — which no
-    // tattooer would do. The tightest phrase sets the size for all of them.
+    // Two passes, so every banner on the sheet ends up at ONE size, set by
+    // the tightest phrase. Fitting each to its own ribbon independently is
+    // what a layout engine would do, but it makes the lettering step between
+    // banners on a single piece — which no tattooer would do.
     const texts = [...svg.querySelectorAll(".btext")];
     let ratio = 1;
 
@@ -1233,13 +1831,13 @@
   else addEventListener("load", fitAll);
 
   /* Refit whenever a ribbon's box actually changes size, not just on window
-     resize. fonts.ready fires before the plate column has finished settling —
-     the hearts SVG resolves its height, the column reflows, and every ribbon
-     box gets a few px narrower AFTER the fitter has already run against the
-     old width. That left the title one pixel over its ribbon at narrow
-     widths. Observing the box closes the loop; changing the label's
-     font-size does not change the wrapper's width (it is a percentage of the
-     cell), so this cannot feed back on itself. */
+     resize. fonts.ready fires before the sheet has finished settling — the
+     scroll SVG resolves its height, the plate reflows, and a ribbon box can
+     end up a few px narrower AFTER the fitter has already run against the old
+     width. That left the title one pixel over its ribbon at narrow widths.
+     Observing the box closes the loop; changing the label's font-size does
+     not change the wrapper's width (it is a percentage of the cell), so this
+     cannot feed back on itself. */
   if (window.ResizeObserver) {
     let roTimer = 0;
     const ro = new ResizeObserver(() => {
@@ -1249,16 +1847,19 @@
     document.querySelectorAll(".ribbon-wrap").forEach((el) => ro.observe(el));
   }
 
+  /* A resize re-packs the whole sheet rather than stretching it: the boxes
+     are px, and the composition is a function of the paper's shape. Same
+     seed, so it is recognisably the same sheet, redrawn to fit. */
   let fitTimer = 0;
   addEventListener("resize", () => {
     clearTimeout(fitTimer);
-    fitTimer = setTimeout(fitRibbons, 120);
-    // a zoomed piece is positioned from measured geometry, so it has to be
-    // recomputed against the new viewport or the zoom drifts off-centre
-    if (current) {
-      const p = pieces.find((x) => x.id === current);
-      if (p) sheet.style.transform = transformFor(p.cell);
-    }
+    fitTimer = setTimeout(() => {
+      render();
+      fitRibbons();
+      // a zoomed piece is positioned from measured geometry, so it has to be
+      // recomputed against the new layout or the zoom drifts off its piece
+      if (current) zoomTo(current);
+    }, 120);
   });
 
   /* ── zoom: navigate the plane by depth, not by length ─────────────
@@ -1271,22 +1872,47 @@
   const sheet = document.getElementById("sheet");
   const reader = document.getElementById("reader");
   const dismiss = document.getElementById("dismiss");
-  const ZOOM = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--zoom")) || 2.6;
 
-  /* Measured from the cell's actual box rather than assuming equal thirds:
-     the centre column is deliberately wider than the outer two, so the old
-     (col + 0.5) / 3 arithmetic would now aim the zoom slightly off-centre.
-     Reading real geometry also means this keeps working if the track sizes
-     are ever retuned. */
-  function transformFor(n) {
-    const cell = cellNodes.get(n);
-    if (!cell) return "translate(0, 0) scale(1)";
-    const cx = cell.offsetLeft + cell.offsetWidth / 2;
-    const cy = cell.offsetTop + cell.offsetHeight / 2;
-    const tx = innerWidth / 2 - ZOOM * cx;
-    const ty = innerHeight / 2 - ZOOM * cy;
-    return `translate(${round(tx)}px, ${round(ty)}px) scale(${ZOOM})`;
+  /* There is no single zoom factor any more, because the pieces are no longer
+     one size: the packer draws each one somewhere between a stamp and a palm.
+     So the scale is computed per piece, from its measured box rather than from
+     anything the layout was asked for (the packer shrinks pieces that wouldn't
+     otherwise fit), to fill a target box on screen.
+
+     The piece is NOT centred: it goes top-right and the reader takes the
+     bottom-left, so the two never sit on top of each other. Below 760px there
+     isn't room to put them side by side, so the piece goes to the top and the
+     reader keeps the bottom. */
+  function zoomTo(id) {
+    const el = nodes.get(id);
+    if (!el) { sheet.style.transform = "translate(0, 0) scale(1)"; return; }
+
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const narrow = innerWidth < 760;
+    const boxW = innerWidth * (narrow ? 0.78 : 0.48);
+    const boxH = innerHeight * (narrow ? 0.34 : 0.66);
+    const z = clamp(Math.min(boxW / w, boxH / h), 1.3, 4.4);
+
+    // where that box wants the piece's centre to end up on screen
+    const toX = narrow ? innerWidth / 2 : innerWidth * 0.96 - boxW / 2;
+    const toY = innerHeight * 0.05 + boxH / 2;
+
+    const cx = el.offsetLeft + w / 2, cy = el.offsetTop + h / 2;
+    // the zoomed glow divides its radii by this, so it has to be readable
+    // from CSS rather than baked into the transform string
+    document.body.style.setProperty("--z", round(z));
+    sheet.style.transform =
+      `translate(${round(toX - z * cx)}px, ${round(toY - z * cy)}px) scale(${round(z)})`;
   }
+
+  /* Every flash sheet quotes a price against every piece on it. This is that
+     line: whether the work can be taken, or was paid for, or is nobody's but
+     his. Written in the sheet's own register rather than as a licence badge. */
+  const TERMS = {
+    open:    ["free to take", "open source — copy it, run it, change it"],
+    profit:  ["commissioned", "for profit — the work is sold, not given"],
+    private: ["not for sale", "private work — you can see it, you can't have it"]
+  };
 
   function readerHTML(p) {
     const g = p.github || {};
@@ -1295,12 +1921,31 @@
     meta.push(["last worked", ago(g.pushed_at)]);
     if (g.stars) meta.push(["stars", String(g.stars)]);
 
-    return `<h2 class="tattoo-text">${esc(p.title)}</h2>`
-      + (p.banner ? `<p>${esc(p.banner)}</p>` : "")
+    const terms = TERMS[p.terms] || (p.url ? TERMS.open : TERMS.private);
+    const build = Array.isArray(p.build) ? p.build : (p.build ? [p.build] : []);
+
+    // The title stays in the DOM but not on the screen: it is already lettered
+    // on the piece's own ribbon, two feet high, right next to this panel — but
+    // the panel is an aria-live region, and announcing a body of text with no
+    // idea what it is about is worse than a redundant heading.
+    return `<h2 class="unseen">${esc(p.title)}</h2>`
+      + (p.banner ? `<p class="lede">${esc(p.banner)}</p>` : "")
+      + (p.problem
+        ? `<section><h3>what it's for</h3><p>${esc(p.problem)}</p></section>` : "")
+      + (build.length
+        ? `<section><h3>how it's built</h3><ul>`
+          + build.map((line) => `<li>${esc(line)}</li>`).join("")
+          + `</ul></section>` : "")
       + `<dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>`
+      + `<p class="terms"><span class="stamp">${esc(terms[0])}</span>${esc(terms[1])}</p>`
+      // Off-site links open in a new tab: the sheet holds no scroll position
+      // and no history worth losing, but it does hold a zoom state you would
+      // have to find your way back into. `noopener` is not optional with
+      // `_blank` — without it the opened page gets a handle on this one.
       + (p.url
-        ? `<a class="out" href="${esc(p.url)}" rel="noopener">see the work &rarr;</a>`
-        : `<span class="locked">not for sale — private work</span>`);
+        ? `<a class="out" href="${esc(p.url)}" target="_blank" rel="noopener">`
+          + `see the work &rarr;<span class="unseen"> (opens in a new tab)</span></a>`
+        : `<span class="locked">nothing to claim</span>`);
   }
 
   let current = null;
@@ -1308,24 +1953,25 @@
   function apply(id) {
     const p = id ? pieces.find((x) => x.id === id) : null;
 
-    for (const [, node] of cellNodes) node.classList.remove("active");
+    for (const [, node] of nodes) node.classList.remove("active");
 
     if (!p) {
       document.body.classList.remove("zoomed");
       sheet.style.transform = "translate(0, 0) scale(1)";
+      document.body.style.setProperty("--z", "1");
       reader.innerHTML = "";
       current = null;
       return;
     }
 
-    const cell = cellNodes.get(p.cell);
+    const cell = nodes.get(p.id);
     if (cell) cell.classList.add("active");
     // the reader inherits the piece's tier, so its title bleeds by the
     // same amount the flash does
     reader.className = "reader t" + tierFor(p.github && p.github.pushed_at);
     reader.innerHTML = readerHTML(p);
     document.body.classList.add("zoomed");
-    sheet.style.transform = transformFor(p.cell);
+    zoomTo(p.id);
     current = p.id;
     if (id !== null) reader.focus({ preventScroll: true });
   }

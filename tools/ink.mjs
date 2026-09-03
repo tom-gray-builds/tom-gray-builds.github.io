@@ -60,8 +60,8 @@ const today = new Date().toISOString().slice(0, 10);
 
 const flash = JSON.stringify({
   generated: today,
-  pieces: pieces.map(({ id, title, banner, repo, url, motif, cell, github }) => ({
-    id, title, banner, repo, url, motif, cell, github
+  pieces: pieces.map(({ id, title, banner, problem, build, terms, repo, url, motif, cell, github }) => ({
+    id, title, banner, problem, build, terms, repo, url, motif, cell, github
   }))
 });
 
@@ -81,6 +81,8 @@ const jsonld = JSON.stringify({
     "@type": "SoftwareSourceCode",
     name: p.title,
     abstract: p.banner,
+    ...(p.problem ? { description: p.problem } : {}),
+    ...(p.terms ? { isAccessibleForFree: p.terms === "open" } : {}),
     ...(p.url ? { codeRepository: p.url } : {}),
     ...(p.github?.language ? { programmingLanguage: p.github.language } : {}),
     ...(p.github?.pushed_at ? { dateModified: p.github.pushed_at.slice(0, 10) } : {})

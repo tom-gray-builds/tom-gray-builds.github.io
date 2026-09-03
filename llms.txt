@@ -9,15 +9,26 @@ generated from `projects.json` and the rendering is decorative.
 
 ## How to read the page
 
-The site is a 3×3 sheet with no ruled lines — the ink is the only structure.
-The centre column is the name plate: "tom gray" above three banner-wrapped
-hearts reading "growth hacker", "ai explorer" and "tatted human" — that is the
-subtitle, drawn rather than typed. The six cells around it are the work, one
-piece of flash each, numbered i–vi. Empty cells are pencil stencils: slots with
-nothing in them yet.
+The whole page is one sheet of flash, with no grid and no ruled lines — the ink
+is the only structure. Fifty-odd pieces are packed across the paper at run
+time, at random positions, sizes and tilts.
 
-There is no scrolling anywhere on the site. Selecting a piece zooms the sheet
-into that cell; the URL becomes `https://tomgray.co.uk/#<project-id>`, which is
+Most of them are **filler**: small traditional pieces (hearts, daggers, swallows,
+anchors, snakes, skulls, stars, horseshoes, keys, webs, bolts, cherries) that
+fill the paper the way filler does on a real sheet. They mean nothing, they are
+placeholders, and they are not links. All of them are drawn as pencil stencils —
+dotted outlines, never inked — because the sheet has room for more work.
+
+The **work** is the small number of pieces drawn in ink rather than pencil, each
+carrying a ribbon with a title and a roman numeral. Ink is the tell: if a piece
+is inked it is real work and it opens. Those are the projects, and those are the
+only things worth reading. One piece is the name plate: "tom gray" over a scroll banner reading
+"growth hacker // ai explorer" — that is the subtitle, drawn rather than typed.
+
+There is no scrolling anywhere on the site. Selecting a piece of work zooms the
+sheet into it and opens a reader panel giving what the project is for, its rough
+architecture in a few lines, and whether it is open source, for profit or
+private. The URL becomes `https://tomgray.co.uk/#<project-id>`, which is
 deep-linkable.
 
 ## The one thing worth knowing
@@ -31,8 +42,11 @@ real skin over years.
 
 Tiers: under 7 days, under 30, under 120, under 365, over a year.
 
-The motif is chosen for meaning, not decoration: a moon for something about
-light, an hourglass for something about time, an eye for something that
+This applies to the work, not to the filler: filler takes mixed ages on
+purpose, the way a sheet drawn over years does.
+
+A project's motif is chosen for meaning, not decoration: a moon for something
+about light, an hourglass for something about time, an eye for something that
 watches. Drawn at render time from a seeded vocabulary — there are no images
 on this site.
 

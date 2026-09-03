@@ -4,18 +4,39 @@
     "Run `node tools/ink.mjs --refresh` to pull the `github` block for any",
     "entry with a `repo`, then inline everything into index.html.",
     "",
-    "cell: position on the 3x3 sheet in reading order. The centre column",
-    "      (2, 5, 8) is the name plate and the three hearts, so the valid",
-    "      project cells are 1, 3, 4, 6, 7 and 9 — six slots.",
-    "motif: 'auto' seeds from the id; or pin one of dagger|swallow|moon|rose.",
+    "cell: no longer a position — the sheet has no grid. It is a running",
+    "      ORDER: lowest first. It sets which piece is numbered i, and the",
+    "      earlier a piece comes the sooner the packer picks its spot. Any",
+    "      number is valid; missing sorts last.",
+    "motif: 'auto' reads the piece's own words and picks the form that means",
+    "      the right thing; or pin one by name (see MOTIFS in index.html).",
     "url: optional. Omit it for private work — the piece renders, but there is",
-    "     nothing to claim, which is on-theme rather than a gap."
+    "     nothing to claim, which is on-theme rather than a gap.",
+    "repo: optional, and it IS published — ink.mjs inlines it into index.html.",
+    "      Leave it off a private repo you would rather not name, and set the",
+    "      `github` block by hand; --refresh then leaves that entry alone.",
+    "",
+    "What the reader shows when you open a piece:",
+    "problem: what it is for, in plain words. One or two sentences.",
+    "build:   the rough architecture, three to five short lines. An abstract,",
+    "         not a file listing — how the thing is put together.",
+    "terms:   'open' | 'profit' | 'private'. A flash sheet quotes a price for",
+    "         every piece on it; this is that line."
   ],
   "pieces": [
     {
       "id": "smart-blinds",
       "title": "smart blinds",
       "banner": "Blinds that read the light and decide for themselves.",
+      "problem": "The blinds shipped with an official app that drops its connection and loses track of which blind is which. This is the same hardware driven from a web page instead: scan, connect, send any blind to any position, and have it remember them next time.",
+      "build": [
+        "a static page — no framework, no build step, no dependencies",
+        "Web Bluetooth straight from the browser to the blind",
+        "speaks the MotionBlinds BLE protocol, falls back to Tuiss's own",
+        "AES-128 ECB hand-rolled in about a hundred lines",
+        "service worker precaches the lot, so it works offline"
+      ],
+      "terms": "open",
       "repo": "tom-gray-builds/smart-blinds",
       "url": "https://github.com/tom-gray-builds/smart-blinds",
       "motif": "auto",
@@ -24,6 +45,46 @@
         "pushed_at": "2026-04-04T09:03:53Z",
         "language": "JavaScript",
         "stars": 1
+      }
+    },
+    {
+      "id": "fontloop",
+      "title": "fontloop",
+      "banner": "A brief in plain English; a real typeface out.",
+      "problem": "Drawing a display face means committing a few hundred curves by hand before you find out whether the idea was any good. This turns a written brief into a style descriptor and renders the whole family from it, so an idea can be judged in seconds instead of weeks — and then compiled to a font you can actually install.",
+      "build": [
+        "the brief goes to a model, which returns a style descriptor",
+        "a parametric engine draws from it — tagged skeleton strokes, modulated pen",
+        "pen angle gives the real Didone thick/thin; authored end caps give the serifs",
+        "profile-based sidebearings space it; heavy weights auto-open their counters",
+        "every descriptor compiles to an installable .otf, re-parsed to validate"
+      ],
+      "terms": "private",
+      "motif": "typewriter",
+      "cell": 2,
+      "github": {
+        "pushed_at": "2026-07-28T20:45:06Z",
+        "language": "TypeScript"
+      }
+    },
+    {
+      "id": "avatars",
+      "title": "avatars",
+      "banner": "One file defines a character; everything else is generated.",
+      "problem": "An end-to-end test of how much of a consistent synthetic identity can be automated. A single definition holds a character's look, voice and world, and everything downstream — the images, the writing, the posting schedule — is derived from that one file rather than authored per post.",
+      "build": [
+        "one persona definition is the single source of truth for look, voice and scene",
+        "a diffusion model draws the images, an LLM writes the copy, both prompted from it",
+        "a reference library holds the face steady across generations",
+        "Postgres keeps the history, so it never repeats itself back at you",
+        "runs on scheduled CI — no server, and it can be driven from a phone"
+      ],
+      "terms": "private",
+      "motif": "figure",
+      "cell": 3,
+      "github": {
+        "pushed_at": "2026-05-06T05:33:51Z",
+        "language": "TypeScript"
       }
     }
   ]
