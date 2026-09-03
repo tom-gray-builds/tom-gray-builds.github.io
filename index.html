@@ -208,6 +208,16 @@
     min-height: 0;
     width: 100%;
     overflow: visible;
+  }
+
+  /* The filter rasterises whatever it's applied to as one flat image, so a
+     line filtered together with the shade fill sitting right behind it gets
+     almost no blowout — dilating one translucent grey into another next to
+     it is barely any contrast to bleed through. The whole illustration is
+     built as two layers, fill then ink (see heartsSVG), so every line —
+     the beading, the leaf ribs, the banner scrollwork, not just the heart's
+     own outline — filters against open paper and blows out the same way. */
+  .hearts-ink {
     filter: var(--tattoo-filter) var(--tattoo-glow);
   }
 
@@ -251,15 +261,19 @@
     stroke-dasharray: 0.001 9;
   }
 
-  /* the banner is opaque — it passes IN FRONT of the heart */
-  .hearts .band { fill: var(--skin); stroke: var(--ink); stroke-width: 3.2; stroke-linejoin: round; }
+  /* the banner is opaque — it passes IN FRONT of the heart. Fill only: its
+     outline is drawn again as a separate .ink path on top (see banner()),
+     so the outline lives in the filtered ink layer instead of baked into
+     this fill. */
+  .hearts .band { fill: var(--skin); }
   .hearts .band-shade { fill: var(--t3); stroke: none; opacity: 0.55; }
 
   .hearts .leaf { fill: var(--t3); stroke: none; }
   .hearts .leaf-shade { fill: var(--t4); stroke: none; }
   .hearts .stem { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; }
   .hearts .petal { fill: var(--t2); stroke: none; }
-  .hearts .eye { fill: var(--t5); stroke: var(--ink); stroke-width: 1.8; }
+  /* fill only — the outline is a separate .ink-thin circle on top (flower()) */
+  .hearts .eye { fill: var(--t5); }
 
   .hearts .btext {
     font-family: "Sancreek", "IM Fell English", serif;
@@ -309,6 +323,15 @@
     width: min(17vw, 29vh);
     height: min(17vw, 29vh);
     overflow: visible;
+  }
+
+  /* The filter rasterises whatever sits inside the element it's applied
+     to. Put it on the whole sigil and a line drawn over the grey shade
+     fill barely blooms — dilating one translucent grey into another next
+     to it is almost no contrast for the blur to show. Ink gets its own
+     group, filtered on its own, so it always bleeds against open paper —
+     the shade fill underneath stays out of that raster entirely. */
+  .sigil-ink {
     filter: var(--tattoo-filter) var(--tattoo-glow);
   }
 
@@ -382,7 +405,7 @@
      Pencil stencil, never inked. The sheet has room for more work —
      said with drawing rather than with copy. */
   .slot { opacity: 0.2; --age: 0.5; }
-  .slot .sigil { filter: none; }
+  .slot .sigil-ink { filter: none; }
   .slot .sigil .line,
   .slot .sigil .thin { stroke-width: 1.9; stroke-dasharray: 4 4.5; }
   .slot .sigil .solid { fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-dasharray: 4 4.5; }
@@ -872,11 +895,17 @@
       stipple += `<circle class="stipple" cx="${x}" cy="${y}" r="${round(between(r, 0.3, 0.95))}"/>`;
     }
 
-    const lines = parts.map((p) => `<path class="${p.k}" d="${p.d}"/>`).join("");
+    // Split shade (flat grey mass) from ink (line/thin/solid) into separate
+    // groups so the ink can be filtered on its own — see .sigil-ink above.
+    const shadeLines = parts.filter((p) => p.k === "shade")
+      .map((p) => `<path class="${p.k}" d="${p.d}"/>`).join("");
+    const inkLines = parts.filter((p) => p.k !== "shade")
+      .map((p) => `<path class="${p.k}" d="${p.d}"/>`).join("");
 
     return `<svg class="sigil" viewBox="0 0 100 100" aria-hidden="true">`
       + `<g>${wash}</g><g>${stipple}</g>`
-      + `<g transform="rotate(${tilt} 50 50)">${lines}</g></svg>`;
+      + `<g class="sigil-fill" transform="rotate(${tilt} 50 50)">${shadeLines}</g>`
+      + `<g class="sigil-ink" transform="rotate(${tilt} 50 50)">${inkLines}</g></svg>`;
   }
 
   function ribbon(title) {
@@ -912,8 +941,13 @@
     const rib = `M0 0 Q${round(curl * 0.35)} ${round(-L * 0.55)} ${tip} ${round(-L)}`;
     const half = `M0 0 C${round(-W * 0.95)} ${round(-L * 0.28)} ${round(-W * 0.78)} ${round(-L * 0.74)} ${tip} ${round(-L)}`
       + ` Q${round(curl * 0.35)} ${round(-L * 0.55)} 0 0 Z`;
-    return `<path class="leaf" d="${outline}"/><path class="leaf-shade" d="${half}"/>`
-      + `<path class="ink-thin" d="${outline}"/><path class="ink-thin" d="${rib}"/>`;
+    // fill (flat leaf mass) and ink (outline + rib) are returned separately
+    // so the whole hearts illustration can filter its ink in one pass, off
+    // its own alpha rather than off whatever shade fill it happens to sit on
+    return {
+      fill: `<path class="leaf" d="${outline}"/><path class="leaf-shade" d="${half}"/>`,
+      ink: `<path class="ink-thin" d="${outline}"/><path class="ink-thin" d="${rib}"/>`
+    };
   }
 
   /* A sprig: leaves along a curving stem, every one of them a different
@@ -923,7 +957,9 @@
   function sprig(r, len, count, flip) {
     const s = flip ? -1 : 1;
     const cx = s * len * 0.3, cy = -len * 0.5, ex = s * len * 0.52, ey = -len;
-    const out = [`<path class="stem" d="M0 0 Q${round(cx)} ${round(cy)} ${round(ex)} ${round(ey)}"/>`];
+    // the stem itself is ink (a stroke, not a fill)
+    let ink = `<path class="stem" d="M0 0 Q${round(cx)} ${round(cy)} ${round(ex)} ${round(ey)}"/>`;
+    let fill = "";
     for (let i = 0; i < count; i++) {
       // uneven spacing along the stem, so the leaves do not sit on a ruler
       const t = (i + between(r, 0.55, 0.95)) / (count + 0.45);
@@ -933,17 +969,19 @@
       const L = len * between(r, 0.34, 0.52) * (1 - t * 0.3);
       const W = L * between(r, 0.3, 0.42);
       const ang = side * s * between(r, 38, 74) + between(r, -8, 8);
-      out.push(`<g transform="translate(${round(bx)} ${round(by)}) rotate(${round(ang)})">`
-        + leaf(L, W, between(r, -L * 0.16, L * 0.16)) + `</g>`);
+      const g = `translate(${round(bx)} ${round(by)}) rotate(${round(ang)})`;
+      const leafParts = leaf(L, W, between(r, -L * 0.16, L * 0.16));
+      fill += `<g transform="${g}">${leafParts.fill}</g>`;
+      ink += `<g transform="${g}">${leafParts.ink}</g>`;
     }
-    return out.join("");
+    return { fill, ink };
   }
 
   // a small traditional five-petal flower with a dotted centre
   function flower(r, R) {
     const n = 5;
     const spin = between(r, 0, 72);
-    let out = "";
+    let fill = "", ink = "";
     for (let i = 0; i < n; i++) {
       const a = spin + (i / n) * 360 + between(r, -6, 6);
       const p = round(R * between(r, 0.92, 1.08));
@@ -951,11 +989,13 @@
       // than one lumpy rosette
       const d = `M0 0 C${round(-p * 0.4)} ${round(-p * 0.3)} ${round(-p * 0.62)} ${round(-p * 0.88)} 0 ${round(-p)}`
         + ` C${round(p * 0.62)} ${round(-p * 0.88)} ${round(p * 0.4)} ${round(-p * 0.3)} 0 0 Z`;
-      out += `<g transform="rotate(${round(a)})"><path class="petal" d="${d}"/>`
-        + `<path class="ink-thin" d="${d}"/></g>`;
+      const g = `rotate(${round(a)})`;
+      fill += `<g transform="${g}"><path class="petal" d="${d}"/></g>`;
+      ink += `<g transform="${g}"><path class="ink-thin" d="${d}"/></g>`;
     }
-    out += `<circle class="eye" cx="0" cy="0" r="${round(R * 0.34)}"/>`;
-    return out;
+    fill += `<circle class="eye" cx="0" cy="0" r="${round(R * 0.34)}"/>`;
+    ink += `<circle class="ink-thin" cx="0" cy="0" r="${round(R * 0.34)}"/>`;
+    return { fill, ink };
   }
 
   /* A spiral, for the rolled ends of the scrolls — the detail that makes a
@@ -979,28 +1019,30 @@
     const band = `M${-HW} ${-T / 2} Q0 ${round(-T / 2 - 8)} ${HW} ${-T / 2}`
       + ` L${HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${-HW} ${T / 2} Z`;
 
-    let out = `<path class="band" d="${band}"/>`;
+    let fill = `<path class="band" d="${band}"/>`;
+    let ink = `<path class="ink" d="${band}"/>`;
     // the underside of the sag catches the shadow
-    out += `<path class="band-shade" d="M${-HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${HW} ${T / 2}`
+    fill += `<path class="band-shade" d="M${-HW} ${T / 2} Q0 ${round(T / 2 - 8)} ${HW} ${T / 2}`
       + ` L${HW} ${round(T / 2 - 3)} Q0 ${round(T / 2 - 11)} ${-HW} ${round(T / 2 - 3)} Z"/>`;
 
     for (const dir of [-1, 1]) {
       const cx = round(dir * (HW + R * 0.72)), cy = round(T * 0.16);
       // the ribbon narrows into the roll
-      out += `<path class="band" d="M${dir * HW} ${round(-T / 2)} L${cx} ${cy - R}`
-        + ` L${cx} ${cy + R} L${dir * HW} ${round(T / 2)} Z"/>`;
-      out += `<circle class="band" cx="${cx}" cy="${cy}" r="${R}"/>`;
-      out += `<path class="band-shade" d="M${cx} ${cy + R} A${R} ${R} 0 0 ${dir > 0 ? 1 : 0} `
+      const wedge = `M${dir * HW} ${round(-T / 2)} L${cx} ${cy - R}`
+        + ` L${cx} ${cy + R} L${dir * HW} ${round(T / 2)} Z`;
+      fill += `<path class="band" d="${wedge}"/>`;
+      fill += `<circle class="band" cx="${cx}" cy="${cy}" r="${R}"/>`;
+      fill += `<path class="band-shade" d="M${cx} ${cy + R} A${R} ${R} 0 0 ${dir > 0 ? 1 : 0} `
         + `${round(cx + dir * R * 0.75)} ${round(cy - R * 0.66)} L${cx} ${cy} Z"/>`;
-      out += `<circle class="ink" cx="${cx}" cy="${cy}" r="${R}"/>`;
-      out += `<path class="ink-thin" d="${spiralPath(cx, cy, R * 0.86, R * 0.2, 1.15, Math.PI * 0.85, dir)}"/>`;
+      ink += `<path class="ink" d="${wedge}"/>`;
+      ink += `<circle class="ink" cx="${cx}" cy="${cy}" r="${R}"/>`;
+      ink += `<path class="ink-thin" d="${spiralPath(cx, cy, R * 0.86, R * 0.2, 1.15, Math.PI * 0.85, dir)}"/>`;
     }
 
-    out += `<path class="ink" d="${band}"/>`;
-    out += `<path id="bnr-${i}" fill="none" d="M${-HW + 5} 0 Q0 -8 ${HW - 5} 0"/>`;
-    out += `<text class="btext" font-size="13" text-anchor="middle" dominant-baseline="middle">`
+    ink += `<path id="bnr-${i}" fill="none" d="M${-HW + 5} 0 Q0 -8 ${HW - 5} 0"/>`;
+    ink += `<text class="btext" font-size="13" text-anchor="middle" dominant-baseline="middle">`
       + `<textPath href="#bnr-${i}" startOffset="50%">${esc(text)}</textPath></text>`;
-    return out;
+    return { fill, ink };
   }
 
   /* One heart. The structure is the thing the reference gets right and a
@@ -1009,7 +1051,7 @@
      rim rather than floating inset on the heart. */
   function heartUnit(i, text, rot) {
     const RIM = 0.845, DOTS = 0.925;
-    return `<g transform="translate(-50 -47)">`
+    const fill = `<g transform="translate(-50 -47)">`
       + `<path class="rim" d="${HEART}"/>`
       + `<path class="body" d="${HEART}" transform="${about(RIM)}"/>`
       // shading: a lighter copy pushed down-right leaves a dark crescent
@@ -1018,10 +1060,13 @@
       + `<g clip-path="url(#hc-${i})">`
       + `<path class="body-lit" d="${HEART}" transform="translate(7 9) ${about(RIM * 0.99)}"/>`
       + `</g>`
+      + `</g>`;
+    const ink = `<g transform="translate(-50 -47)">`
       + `<path class="ink" d="${HEART}"/>`
       + `<path class="ink" d="${HEART}" transform="${about(RIM)}"/>`
       + `<path class="beads" d="${HEART}" transform="${about(DOTS)}"/>`
       + `</g>`;
+    return { fill, ink };
   }
 
   function heartsSVG(lines) {
@@ -1035,33 +1080,51 @@
       { cx: 196, cy: 214, rot: 9 },
       { cx: 164, cy: 332, rot: -11 }
     ];
+    // Every shape below returns { fill, ink } separately (see leaf/sprig/
+    // flower/banner/heartUnit) so each one's own ink can be filtered against
+    // open paper instead of against the fill sitting right behind it — see
+    // the comment on .hearts-ink. But three hearts stack with real overlap
+    // (that's the whole "hand-placed" trick above), so document order still
+    // has to run sprig → heart1 → heart2 → heart3 → flower exactly as before:
+    // bucketing every fill ahead of every ink would put heart 1's outline on
+    // top of heart 2's fill, which is a z-order bug, not a filter one. So
+    // fill and ink are written as an adjacent pair, per shape, in place.
     let out = "";
+    const add = (g, parts) => {
+      out += `<g transform="${g}">${parts.fill}</g>`;
+      out += `<g class="hearts-ink" transform="${g}">${parts.ink}</g>`;
+    };
 
     // foliage first, so only the tips show past the hearts. Every anchor
     // point below is placed to land ON a heart's rim (same +74/-40 and
     // -68/-18 offsets from each heart's centre, since all three hearts are
     // the same size) — a sprig rooted in empty space reads as litter on the
     // sheet, not as growth coming off the piece.
-    out += `<g transform="translate(104 78) rotate(-38) scale(1.5)">${sprig(r, 56, 5, true)}</g>`;
-    out += `<g transform="translate(246 56) rotate(24) scale(1.45)">${sprig(r, 54, 5, false)}</g>`;
-    out += `<g transform="translate(270 174) rotate(34) scale(1.35)">${sprig(r, 50, 4, false)}</g>`;
-    out += `<g transform="translate(128 196) rotate(-32) scale(1.4)">${sprig(r, 52, 4, true)}</g>`;
-    out += `<g transform="translate(238 292) rotate(30) scale(1.4)">${sprig(r, 52, 5, false)}</g>`;
-    out += `<g transform="translate(96 314) rotate(-28) scale(1.3)">${sprig(r, 48, 4, true)}</g>`;
+    add("translate(104 78) rotate(-38) scale(1.5)", sprig(r, 56, 5, true));
+    add("translate(246 56) rotate(24) scale(1.45)", sprig(r, 54, 5, false));
+    add("translate(270 174) rotate(34) scale(1.35)", sprig(r, 50, 4, false));
+    add("translate(128 196) rotate(-32) scale(1.4)", sprig(r, 52, 4, true));
+    add("translate(238 292) rotate(30) scale(1.4)", sprig(r, 52, 5, false));
+    add("translate(96 314) rotate(-28) scale(1.3)", sprig(r, 48, 4, true));
 
     lines.forEach((text, i) => {
       const L = LAY[i];
-      out += `<g transform="translate(${L.cx} ${L.cy}) scale(${S})">`
-        + heartUnit(i, text, L.rot)
-        // +21 puts the band across the lower third, as the reference does
-        + `<g transform="translate(0 21) rotate(${L.rot})">${banner(i, text)}</g>`
-        + `</g>`;
+      const hu = heartUnit(i, text, L.rot);
+      const bn = banner(i, text);
+      // +21 puts the band across the lower third, as the reference does
+      const bg = `translate(0 21) rotate(${L.rot})`;
+      const g = `translate(${L.cx} ${L.cy}) scale(${S})`;
+      out += `<g transform="${g}">`
+        + `<g>${hu.fill}</g><g class="hearts-ink">${hu.ink}</g>`
+        + `<g transform="${bg}">`
+        + `<g>${bn.fill}</g><g class="hearts-ink">${bn.ink}</g>`
+        + `</g></g>`;
     });
 
     // flowers sit on top, tucked against the hearts
-    out += `<g transform="translate(262 108) scale(1.55)">${flower(r, 18)}</g>`;
-    out += `<g transform="translate(92 240) scale(1.5)">${flower(r, 17)}</g>`;
-    out += `<g transform="translate(280 306) scale(1.3)">${flower(r, 15)}</g>`;
+    add("translate(262 108) scale(1.55)", flower(r, 18));
+    add("translate(92 240) scale(1.5)", flower(r, 17));
+    add("translate(280 306) scale(1.3)", flower(r, 15));
 
     return `<svg class="hearts" viewBox="0 0 360 440" preserveAspectRatio="xMidYMid meet"`
       + ` role="img" aria-label="${esc(lines.join(", "))}">${out}</svg>`;
