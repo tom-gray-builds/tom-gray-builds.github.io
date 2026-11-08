@@ -1,0 +1,55 @@
+# Universe preview
+
+The 3D system for [tomgray.co.uk](https://tomgray.co.uk). Each project from `projects.json` is one planet. GitHub Pages serves a copy of this build from the repository root. `CNAME` is unchanged, and `privacy.html` stays at `/privacy`. The flash sheet that was live before this is the tag `production-before-universe`.
+
+A separate Workers hostname, listed below, serves the same preview on its own. Publishing the Worker does not publish the domain, and publishing the domain does not remove the Worker.
+
+## Run it
+
+From this directory:
+
+```bash
+npm install
+npm run dev      # http://127.0.0.1:5173
+npm test
+npm run build
+npm run preview  # http://127.0.0.1:4174 — serves the static build
+npm run smoke    # headless pass over the built preview
+```
+
+The dev server and the build both read `../projects.json`. Edit that file, then refresh. Names, descriptions, build notes, terms, and URLs come from there and are not rewritten in the scene.
+
+Add a project by editing `projects.json` only. Sort order (`cell`) assigns the next circumbinary orbit in `orbitFor()` — radius, tilt, and period grow with the index, so nothing in the scene file has to be repositioned. `surfaceFor()` in `src/scene/system.ts` picks the world: smart blinds is an eyeball ocean, fontloop a lava crust, avatars a tilted ice giant with rings. A new id cycles those three until you add a bespoke entry. Names, descriptions, and URLs still come only from `projects.json`. The surfaces, suns, rings, belt, sky, and globular clusters are original shaders. No decorative glass shells are drawn around the suns. The Solar System Scope photographs kept under `src/assets/textures/` are not drawn; see `ATTRIBUTION.md`.
+
+## What changed, architecturally
+
+The live page is one static file with inline CSS and vanilla JS. This preview is a Vite app using React Three Fiber. `npm run build` emits a static `dist/` (relative asset paths, no server required). It is gitignored.
+
+Two suns orbit their shared centre. Each project is one planet on its own circumbinary orbit, with a thin orbit line. HTML labels stay anchored to the planets. Focusing a planet keeps the camera on that moving world and frames the whole body, including rings, in the area the details panel does not cover.
+
+Drag orbits. Scroll or pinch zooms, inside a hard near and far limit. Click or tap a planet, or its label, and the camera eases in and a panel opens. A drag past a few pixels does not count as a click. Back (and Escape) returns to the pose you had before focusing. Reset view, R, and Home return to the overview and close the panel. Arrow keys orbit. Plus and minus zoom.
+
+On a phone the scene is the same one. Quality drops (pixel ratio, segment counts, star count, environment resolution) when the pointer is coarse, the device is small, or there are few cores. It does not fall back to a list. A list is only rendered when WebGL cannot start, or JavaScript is off.
+
+Reduced motion snaps the camera and stops the slow spins.
+
+## Public preview host
+
+A copy of this build is published as its own Worker, `tom-gray-universe-preview`, at:
+
+https://tom-gray-universe-preview.tomgray.workers.dev
+
+That hostname is not `tomgray.co.uk`. It does not change GitHub Pages, `CNAME`, or DNS. Deleting that Worker removes the preview and leaves the live site alone. `npx wrangler deploy` from this folder publishes `dist/` again; it does not deploy the repository root.
+
+## Deployment steps that were not taken
+
+Do not do any of this as part of viewing the preview.
+
+GitHub Pages for this repository publishes the **repository root**. `CNAME` points the root at `tomgray.co.uk`. To publish this redesign later, on purpose:
+
+1. Keep `privacy.html` reachable at `/privacy`. The privacy policy is unrelated to this view and must keep returning HTTP 200.
+2. Build with `npm run build`.
+3. Either replace the Pages root with `preview/dist` (this removes the flash sheet), or copy `dist` to a subpath such as `universe/` and set Vite `base` to `/universe/` before building.
+4. Do not change `CNAME`, DNS, or the Pages source until that replacement is the decision.
+
+Until then, the live site is the flash sheet and this branch only adds the preview.
