@@ -19,16 +19,13 @@ npm run smoke    # headless pass over the built preview
 
 The dev server and the build both read `../projects.json`. Edit that file, then refresh. Names, descriptions, build notes, terms, and URLs come from there and are not rewritten in the scene.
 
-`appearanceFor()` in `src/scene/layout.ts` maps the three current ids onto bespoke planets (louvered brass, glass press, pearl with a glass twin). A project added later still appears, on a generated orbit, using one of those three constructions until a bespoke look is added. Do not add planets that are not in `projects.json`.
+Add a project by editing `projects.json` only. Sort order (`cell`) assigns the next circumbinary orbit in `orbitFor()` — radius, tilt, and period grow with the index, so nothing in the scene file has to be repositioned. `kindFor()` in `src/scene/system.ts` picks the surface: smart blinds is an ocean world, fontloop a rocky world, avatars a banded giant with rings. A new id cycles those three kinds until you add a bespoke entry. Names, descriptions, and URLs still come only from `projects.json`. Surfaces and the sky are original procedural shaders; no third-party textures are fetched.
 
 ## What changed, architecturally
 
-The live page is one static file with inline CSS and vanilla JS. This preview is a Vite app: React, React Three Fiber, and drei. `npm run build` emits a static `dist/` (relative asset paths, no server required) so it can sit on GitHub Pages later. It is gitignored.
+The live page is one static file with inline CSS and vanilla JS. This preview is a Vite app using React Three Fiber. `npm run build` emits a static `dist/` (relative asset paths, no server required). It is gitignored.
 
-Navigation borrows two ideas from the pmndrs examples, without their bust or Earth assets:
-
-- shared geometry, with `Detailed` dropping the small orbiting shards once the camera is far away
-- HTML buttons anchored to each planet, so the names stay readable
+Two suns orbit their shared centre. Each project is one planet on its own circumbinary orbit, with a thin orbit line. HTML labels stay anchored to the planets. Focusing a planet keeps the camera on that moving world and frames the whole body, including rings, in the area the details panel does not cover.
 
 Drag orbits. Scroll or pinch zooms, inside a hard near and far limit. Click or tap a planet, or its label, and the camera eases in and a panel opens. A drag past a few pixels does not count as a click. Back (and Escape) returns to the pose you had before focusing. Reset view, R, and Home return to the overview and close the panel. Arrow keys orbit. Plus and minus zoom.
 

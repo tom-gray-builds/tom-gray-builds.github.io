@@ -1,174 +1,457 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Detailed, Environment, Lightformer } from "@react-three/drei";
 import {
   AdditiveBlending,
   BackSide,
   BufferAttribute,
   BufferGeometry,
-  CanvasTexture,
+  Color,
+  DoubleSide,
+  Line as ThreeLine,
+  LineBasicMaterial,
   MathUtils,
-  PointsMaterial,
-  Spherical,
-  SRGBColorSpace,
+  NormalBlending,
+  ShaderMaterial,
+  SphereGeometry,
   Vector3,
   type Group,
 } from "three";
 import type { Piece } from "../data/content";
-import { getKit } from "./geometry";
-import { appearanceFor, placementFor } from "./layout";
-import { getMaterials } from "./materials";
-import { NOISE_GLSL } from "./noise.glsl";
-import { pointerGate } from "./pointer";
-import type { Quality } from "./quality";
 import {
-  clampPhi,
-  clampRadius,
+  clamp,
   focusDistance,
+  framedLook,
   homeRadius,
-  pointerExceededDrag,
   shortestAngle,
-  zoomRadius,
-  type ViewMode,
-} from "./rig";
+  sphericalOffset,
+} from "./framing";
+import type { Quality } from "./quality";
+import { pointerExceededDrag, pointerGate } from "./pointer";
+import {
+  AIR_FRAG,
+  AIR_VERT,
+  CLOUD_FRAG,
+  CORONA_FRAG,
+  GALAXY_FRAG,
+  GIANT_FRAG,
+  OCEAN_FRAG,
+  PLANET_VERT,
+  RING_FRAG,
+  RING_VERT,
+  ROCKY_FRAG,
+  SKY_FRAG,
+  SKY_VERT,
+  STAR_FRAG,
+  STAR_VERT,
+} from "./shaders";
+import {
+  BINARY,
+  bodyRadius,
+  kindFor,
+  orbitFor,
+  orbitPosition,
+  planetPosition,
+  sim,
+  starPosition,
+  visualRadius,
+} from "./system";
 
 export type RigCommand = {
   seq: number;
   type: "reset" | "back" | "left" | "right" | "up" | "down" | "in" | "out";
 };
 
-const SORTS = [
-  { angle: 0.2, radius: 2.62, scale: [0.34, 0.46, 0.22] as const, glass: false, y: 0.08 },
-  { angle: 1.15, radius: 2.85, scale: [0.26, 0.36, 0.18] as const, glass: true, y: -0.06 },
-  { angle: 2.25, radius: 2.5, scale: [0.42, 0.28, 0.24] as const, glass: false, y: 0.12 },
-  { angle: 3.35, radius: 2.78, scale: [0.22, 0.4, 0.2] as const, glass: true, y: 0.02 },
-  { angle: 4.45, radius: 2.42, scale: [0.32, 0.24, 0.28] as const, glass: false, y: -0.1 },
-  { angle: 5.35, radius: 2.95, scale: [0.2, 0.38, 0.18] as const, glass: true, y: 0.07 },
-];
+const STAR_A = new Color(BINARY.primary.color);
+const STAR_B = new Color(BINARY.secondary.color);
 
-function mulberry32(seed: number) {
-  let state = seed;
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function clampPhi(phi: number) {
+  return clamp(phi, 0.32, Math.PI - 0.32);
 }
 
-function circleTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Could not draw a star sprite");
-  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gradient.addColorStop(0, "rgba(255,255,255,1)");
-  gradient.addColorStop(0.35, "rgba(255,255,255,0.85)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 64, 64);
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  return texture;
+function makeLitMaterial(fragment: string, displace: number) {
+  return new ShaderMaterial({
+    vertexShader: PLANET_VERT,
+    fragmentShader: fragment,
+    uniforms: {
+      uDisplace: { value: displace },
+      uStarA: { value: new Vector3() },
+      uStarB: { value: new Vector3() },
+      uColorA: { value: STAR_A },
+      uColorB: { value: STAR_B },
+      uCamera: { value: new Vector3() },
+      uTime: { value: 0 },
+    },
+  });
 }
 
-function starGeometry(count: number, seed: number, near: number, far: number) {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const rand = mulberry32(seed);
-  for (let i = 0; i < count; i++) {
-    const radius = near + rand() * (far - near);
-    const theta = rand() * Math.PI * 2;
-    const phi = Math.acos(2 * rand() - 1);
-    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = radius * Math.cos(phi) * 0.86;
-    positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-    const tint = rand();
-    const color = tint > 0.94 ? [1, 0.84, 0.68] : tint > 0.84 ? [0.72, 0.82, 1] : [0.86, 0.89, 0.95];
-    colors[i * 3] = color[0] * (0.55 + rand() * 0.45);
-    colors[i * 3 + 1] = color[1] * (0.55 + rand() * 0.45);
-    colors[i * 3 + 2] = color[2] * (0.55 + rand() * 0.45);
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  return geometry;
+function pushStars(material: ShaderMaterial, camera: Vector3) {
+  const a = starPosition("primary", sim.time);
+  const b = starPosition("secondary", sim.time);
+  material.uniforms.uStarA.value.set(a.x, a.y, a.z);
+  material.uniforms.uStarB.value.set(b.x, b.y, b.z);
+  if (material.uniforms.uCamera) material.uniforms.uCamera.value.copy(camera);
+  if (material.uniforms.uTime) material.uniforms.uTime.value = sim.time;
 }
-
-const skyVertex = /* glsl */ `
-varying vec3 vDir;
-void main() {
-  vDir = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
-const skyFragment = /* glsl */ `
-varying vec3 vDir;
-${NOISE_GLSL}
-void main() {
-  vec3 dir = normalize(vDir);
-  float band = exp(-pow((dir.y * 0.92 + dir.x * 0.22) / 0.16, 2.0));
-  float clouds = fbm(dir * 2.4);
-  float dust = fbm(dir * 1.5 + 8.0);
-  vec3 color = vec3(0.025, 0.03, 0.05);
-  color += vec3(0.16, 0.13, 0.24) * band * (0.35 + clouds);
-  color += vec3(0.28, 0.14, 0.08) * smoothstep(0.55, 0.9, dust) * 0.4;
-  gl_FragColor = vec4(color, 1.0);
-}
-`;
 
 function Sky() {
   return (
     <mesh frustumCulled={false} renderOrder={-20}>
-      <sphereGeometry args={[200, 40, 28]} />
-      <shaderMaterial side={BackSide} depthWrite={false} vertexShader={skyVertex} fragmentShader={skyFragment} />
+      <sphereGeometry args={[420, 48, 32]} />
+      <shaderMaterial side={BackSide} depthWrite={false} vertexShader={SKY_VERT} fragmentShader={SKY_FRAG} />
     </mesh>
   );
 }
 
-function Stars({ count }: { count: number }) {
-  const far = useMemo(() => starGeometry(count, 0x51f00d, 55, 130), [count]);
-  const near = useMemo(() => starGeometry(Math.round(count * 0.22), 0x91a, 28, 54), [count]);
-  const map = useMemo(() => circleTexture(), []);
-  const farMaterial = useMemo(
+function Starfield({ count }: { count: number }) {
+  const geometry = useMemo(() => {
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    let seed = 17;
+    const rand = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
+    for (let i = 0; i < count; i++) {
+      const radius = 80 + rand() * 260;
+      const theta = rand() * Math.PI * 2;
+      const zBias = Math.pow(rand(), 0.35) * 2 - 1;
+      const phi = Math.acos(clamp(zBias * 0.85, -1, 1));
+      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = radius * Math.cos(phi) * 0.55;
+      positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+      const mag = Math.pow(rand(), 4);
+      const warm = rand();
+      colors[i * 3] = warm > 0.85 ? 1 : 0.82;
+      colors[i * 3 + 1] = warm > 0.85 ? 0.86 : 0.88;
+      colors[i * 3 + 2] = warm > 0.92 ? 0.7 : 1;
+      sizes[i] = 0.8 + mag * 3.4;
+    }
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new BufferAttribute(positions, 3));
+    geo.setAttribute("color", new BufferAttribute(colors, 3));
+    geo.setAttribute("size", new BufferAttribute(sizes, 1));
+    return geo;
+  }, [count]);
+  const material = useMemo(
     () =>
-      new PointsMaterial({
-        map,
-        size: 1.15,
-        sizeAttenuation: true,
+      new ShaderMaterial({
         transparent: true,
         depthWrite: false,
         blending: AdditiveBlending,
         vertexColors: true,
-        opacity: 0.85,
+        uniforms: {},
+        vertexShader: /* glsl */ `
+          attribute float size;
+          varying vec3 vColor;
+          void main() {
+            vColor = color;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = size * (280.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec3 vColor;
+          void main() {
+            vec2 p = gl_PointCoord * 2.0 - 1.0;
+            float d = dot(p, p);
+            if (d > 1.0) discard;
+            float alpha = smoothstep(1.0, 0.15, d);
+            gl_FragColor = vec4(vColor, alpha);
+          }
+        `,
       }),
-    [map],
+    [],
   );
-  const nearMaterial = useMemo(
-    () =>
-      new PointsMaterial({
-        map,
-        size: 0.42,
-        sizeAttenuation: true,
-        transparent: true,
-        depthWrite: false,
-        blending: AdditiveBlending,
-        vertexColors: true,
-        opacity: 0.7,
-      }),
-    [map],
+  return <points geometry={geometry} material={material} />;
+}
+
+function Clusters({ count }: { count: number }) {
+  const geometry = useMemo(() => {
+    const centers = [
+      { x: 140, y: 90, z: -180 },
+      { x: -190, y: 40, z: -120 },
+      { x: 60, y: -80, z: -220 },
+      { x: -40, y: 130, z: 160 },
+    ].slice(0, count);
+    const per = 420;
+    const positions = new Float32Array(centers.length * per * 3);
+    const colors = new Float32Array(centers.length * per * 3);
+    let n = 0;
+    centers.forEach((center, index) => {
+      let seed = 90 + index * 13;
+      const rand = () => {
+        seed = (seed * 48271) % 2147483647;
+        return (seed - 1) / 2147483646;
+      };
+      for (let i = 0; i < per; i++) {
+        const r = Math.pow(rand(), 0.45) * 18;
+        const theta = rand() * Math.PI * 2;
+        const phi = Math.acos(2 * rand() - 1);
+        positions[n] = center.x + r * Math.sin(phi) * Math.cos(theta);
+        positions[n + 1] = center.y + r * Math.sin(phi) * Math.sin(theta) * 0.8;
+        positions[n + 2] = center.z + r * Math.cos(phi);
+        const bright = Math.pow(rand(), 2);
+        colors[n] = 0.9;
+        colors[n + 1] = 0.92;
+        colors[n + 2] = 1;
+        colors[n] *= 0.4 + bright;
+        colors[n + 1] *= 0.4 + bright;
+        colors[n + 2] *= 0.5 + bright;
+        n += 3;
+      }
+    });
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new BufferAttribute(positions, 3));
+    geo.setAttribute("color", new BufferAttribute(colors, 3));
+    return geo;
+  }, [count]);
+  return (
+    <points geometry={geometry}>
+      <pointsMaterial
+        size={3.1}
+        sizeAttenuation
+        vertexColors
+        transparent
+        depthWrite={false}
+        blending={AdditiveBlending}
+        opacity={0.95}
+      />
+    </points>
   );
+}
+
+function Galaxies({ count }: { count: number }) {
+  const spots = [
+    { position: [150, 40, -210] as const, rotation: [1.1, 0.2, 0.4] as const, scale: 52 },
+    { position: [-170, -10, -180] as const, rotation: [0.7, 1.1, 0.3] as const, scale: 40 },
+    { position: [30, 80, 200] as const, rotation: [1.3, 0.4, 0.9] as const, scale: 34 },
+  ].slice(0, count);
   return (
     <group>
-      <points geometry={far} material={farMaterial} dispose={null} />
-      <points geometry={near} material={nearMaterial} dispose={null} />
+      {spots.map((spot) => (
+        <mesh key={spot.position.join(",")} position={spot.position} rotation={spot.rotation} scale={spot.scale}>
+          <circleGeometry args={[1, 48]} />
+          <shaderMaterial
+            transparent
+            depthWrite={false}
+            blending={AdditiveBlending}
+            vertexShader={/* glsl */ `
+              varying vec2 vUv;
+              void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `}
+            fragmentShader={GALAXY_FRAG}
+          />
+        </mesh>
+      ))}
     </group>
   );
 }
 
-function LabelAnchor({ id, hidden }: { id: string; hidden: boolean }) {
+function OrbitLine({ id, index, segments }: { id: string; index: number; segments: number }) {
+  const line = useMemo(() => {
+    const orbit = orbitFor(id, index);
+    const positions = new Float32Array((segments + 1) * 3);
+    for (let i = 0; i <= segments; i++) {
+      const sample = orbitPosition({ ...orbit, phase: (i / segments) * Math.PI * 2, period: 1 }, 0);
+      positions[i * 3] = sample.x;
+      positions[i * 3 + 1] = sample.y;
+      positions[i * 3 + 2] = sample.z;
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    return new ThreeLine(geometry, new LineBasicMaterial({ color: "#d9c7a2", transparent: true, opacity: 0.28 }));
+  }, [id, index, segments]);
+  return <primitive object={line} />;
+}
+
+function Stars() {
+  const primary = useRef<Group>(null);
+  const secondary = useRef<Group>(null);
+  const materials = useRef<ShaderMaterial[]>([]);
+  useFrame(({ camera }) => {
+    const a = starPosition("primary", sim.time);
+    const b = starPosition("secondary", sim.time);
+    primary.current?.position.set(a.x, a.y, a.z);
+    secondary.current?.position.set(b.x, b.y, b.z);
+    materials.current.forEach((material) => {
+      if (material.uniforms.uCamera) material.uniforms.uCamera.value.copy(camera.position);
+      if (material.uniforms.uTime) material.uniforms.uTime.value = sim.time;
+    });
+  });
+  const remember = (material: ShaderMaterial | null) => {
+    if (material && !materials.current.includes(material)) materials.current.push(material);
+  };
+  return (
+    <group>
+      <group ref={primary}>
+        <mesh>
+          <sphereGeometry args={[BINARY.primary.radius, 48, 32]} />
+          <shaderMaterial
+            ref={remember}
+            vertexShader={STAR_VERT}
+            fragmentShader={STAR_FRAG}
+            uniforms={{ uColor: { value: STAR_A }, uCamera: { value: new Vector3() }, uTime: { value: 0 } }}
+          />
+        </mesh>
+        <mesh scale={2.15}>
+          <sphereGeometry args={[BINARY.primary.radius, 32, 24]} />
+          <shaderMaterial
+            ref={remember}
+            transparent
+            depthWrite={false}
+            blending={AdditiveBlending}
+            vertexShader={STAR_VERT}
+            fragmentShader={CORONA_FRAG}
+            uniforms={{ uColor: { value: STAR_A }, uCamera: { value: new Vector3() } }}
+          />
+        </mesh>
+      </group>
+      <group ref={secondary}>
+        <mesh>
+          <sphereGeometry args={[BINARY.secondary.radius, 40, 28]} />
+          <shaderMaterial
+            ref={remember}
+            vertexShader={STAR_VERT}
+            fragmentShader={STAR_FRAG}
+            uniforms={{ uColor: { value: STAR_B }, uCamera: { value: new Vector3() }, uTime: { value: 0 } }}
+          />
+        </mesh>
+        <mesh scale={2.05}>
+          <sphereGeometry args={[BINARY.secondary.radius, 28, 20]} />
+          <shaderMaterial
+            ref={remember}
+            transparent
+            depthWrite={false}
+            blending={AdditiveBlending}
+            vertexShader={STAR_VERT}
+            fragmentShader={CORONA_FRAG}
+            uniforms={{ uColor: { value: STAR_B }, uCamera: { value: new Vector3() } }}
+          />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function PlanetBody({
+  piece,
+  index,
+  quality,
+  reduced,
+  selected,
+  onSelect,
+}: {
+  piece: Piece;
+  index: number;
+  quality: Quality;
+  reduced: boolean;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const kind = kindFor(piece.id, index);
+  const radius = bodyRadius(kind);
+  const group = useRef<Group>(null);
+  const spin = useRef<Group>(null);
+  const { camera, gl } = useThree();
+  const surface = useMemo(() => {
+    const fragment = kind === "ocean" ? OCEAN_FRAG : kind === "rocky" ? ROCKY_FRAG : GIANT_FRAG;
+    const displace = kind === "rocky" ? 0.085 : kind === "ocean" ? 0.035 : 0.012;
+    return makeLitMaterial(fragment, displace);
+  }, [kind]);
+  const clouds = useMemo(() => {
+    const material = makeLitMaterial(CLOUD_FRAG, 0);
+    material.transparent = true;
+    material.depthWrite = false;
+    material.blending = NormalBlending;
+    return material;
+  }, []);
+  const air = useMemo(() => {
+    const tint = kind === "ocean" ? new Color("#8fd6ff") : kind === "rocky" ? new Color("#e7b089") : new Color("#f2d7b0");
+    return new ShaderMaterial({
+      vertexShader: AIR_VERT,
+      fragmentShader: AIR_FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      side: BackSide,
+      uniforms: { uTint: { value: tint }, uCamera: { value: new Vector3() } },
+    });
+  }, [kind]);
+  const rings = useMemo(() => {
+    if (kind !== "giant") return null;
+    return new ShaderMaterial({
+      vertexShader: RING_VERT,
+      fragmentShader: RING_FRAG,
+      transparent: true,
+      depthWrite: false,
+      side: DoubleSide,
+      uniforms: {
+        uStarA: { value: new Vector3() },
+        uStarB: { value: new Vector3() },
+        uColorA: { value: STAR_A },
+        uColorB: { value: STAR_B },
+      },
+    });
+  }, [kind]);
+
+  useFrame((_, delta) => {
+    const position = planetPosition(piece.id, index, sim.time);
+    group.current?.position.set(position.x, position.y, position.z);
+    if (!reduced && spin.current) spin.current.rotation.y += delta * (kind === "giant" ? 0.08 : 0.12);
+    pushStars(surface, camera.position);
+    if (kind === "ocean") pushStars(clouds, camera.position);
+    air.uniforms.uCamera.value.copy(camera.position);
+    if (rings) pushStars(rings, camera.position);
+  });
+
+  const sphere = useMemo(
+    () => new SphereGeometry(1, quality.sphereWidth, quality.sphereHeight),
+    [quality.sphereWidth, quality.sphereHeight],
+  );
+
+  return (
+    <group ref={group}>
+      <group ref={spin}>
+        <mesh geometry={sphere} material={surface} scale={radius} />
+        {kind === "ocean" ? (
+          <mesh geometry={sphere} material={clouds} scale={radius * 1.035} />
+        ) : null}
+        <mesh geometry={sphere} material={air} scale={radius * 1.035} />
+      </group>
+      {rings ? (
+        <mesh material={rings} rotation={[Math.PI / 2.4, 0.2, 0.15]}>
+          <ringGeometry args={[radius * 1.38, radius * 1.78, quality.ringSegments]} />
+        </mesh>
+      ) : null}
+      <mesh
+        scale={visualRadius(kind)}
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          gl.domElement.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          gl.domElement.style.cursor = "grab";
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (pointerGate.dragged) return;
+          onSelect(piece.id);
+        }}
+      >
+        <sphereGeometry args={[1, 16, 12]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+      </mesh>
+      <LabelAnchor id={piece.id} hidden={selected} lift={visualRadius(kind) + 0.15} />
+    </group>
+  );
+}
+
+function LabelAnchor({ id, hidden, lift }: { id: string; hidden: boolean; lift: number }) {
   const anchor = useRef<Group>(null);
   const { camera, size } = useThree();
   const point = useMemo(() => new Vector3(), []);
@@ -184,178 +467,11 @@ function LabelAnchor({ id, hidden }: { id: string; hidden: boolean }) {
     point.project(camera);
     const x = (point.x * 0.5 + 0.5) * size.width;
     const y = (-point.y * 0.5 + 0.5) * size.height;
-    el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -130%)`;
+    const nudge = size.width < 800 ? (id.length % 3 - 1) * 42 : 0;
+    el.style.transform = `translate3d(${x + nudge}px, ${y}px, 0) translate(-50%, -140%)`;
     el.style.visibility = point.z > 1 ? "hidden" : "visible";
   });
-  return <group ref={anchor} position={[0, 1.92, 0]} />;
-}
-
-function Hit({ onSelect, id }: { onSelect: (id: string) => void; id: string }) {
-  const { gl } = useThree();
-  const kit = getKitSafe();
-  const materials = getMaterials();
-  return (
-    <mesh
-      geometry={kit.hit}
-      material={materials.hit}
-      dispose={null}
-      onPointerOver={(event) => {
-        event.stopPropagation();
-        gl.domElement.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        gl.domElement.style.cursor = "grab";
-      }}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (pointerGate.dragged) return;
-        onSelect(id);
-      }}
-    />
-  );
-}
-
-const qualityRef: { current: Quality | null } = { current: null };
-
-function getKitSafe() {
-  if (!qualityRef.current) throw new Error("Quality is not ready");
-  return getKit(qualityRef.current);
-}
-
-function Blinds({ reduced }: { reduced: boolean }) {
-  const kit = getKitSafe();
-  const materials = getMaterials();
-  const spin = useRef<Group>(null);
-  const wheel = useRef<Group>(null);
-  useFrame((_, delta) => {
-    if (reduced || !spin.current || !wheel.current) return;
-    spin.current.rotation.y += delta * 0.05;
-    wheel.current.rotation.y -= delta * 0.12;
-  });
-  return (
-    <group ref={spin}>
-      <mesh geometry={kit.core} material={materials.glow} dispose={null} />
-      <mesh geometry={kit.brassSlats} material={materials.brass} dispose={null} />
-      <mesh geometry={kit.bronzeSlats} material={materials.bronze} dispose={null} />
-      <mesh geometry={kit.meridian} material={materials.bronze} rotation={[0, 0.4, 0]} dispose={null} />
-      <group ref={wheel} rotation={[1.18, 0.25, 0.35]}>
-        <mesh geometry={kit.blades} material={materials.brass} dispose={null} />
-      </group>
-      <pointLight color="#ff8a3c" intensity={8} distance={6.5} decay={2} />
-    </group>
-  );
-}
-
-function Press({ reduced }: { reduced: boolean }) {
-  const kit = getKitSafe();
-  const materials = getMaterials();
-  const spin = useRef<Group>(null);
-  const orbit = useRef<Group>(null);
-  useFrame((_, delta) => {
-    if (reduced || !spin.current || !orbit.current) return;
-    spin.current.rotation.y += delta * 0.04;
-    orbit.current.rotation.y += delta * 0.18;
-  });
-  return (
-    <group ref={spin}>
-      <mesh geometry={kit.sphere} material={materials.marble} dispose={null} />
-      <group rotation={[1.08, 0.18, 0.22]}>
-        <mesh geometry={kit.glassBand} material={materials.glass} dispose={null} />
-        <mesh geometry={kit.ticks} material={materials.gold} dispose={null} />
-        <mesh geometry={kit.inkRule} material={materials.lead} rotation={[Math.PI / 2, 0, 0]} dispose={null} />
-        <mesh geometry={kit.pearlRing} material={materials.chrome} rotation={[Math.PI / 2, 0, 0]} scale={1.5} dispose={null} />
-        <Detailed distances={[0, 48]}>
-          <group ref={orbit}>
-            {SORTS.map((sort) => (
-              <mesh
-                key={sort.angle}
-                geometry={kit.sortBox}
-                material={sort.glass ? materials.glass : materials.lead}
-                position={[Math.cos(sort.angle) * sort.radius, sort.y, Math.sin(sort.angle) * sort.radius]}
-                scale={sort.scale}
-                rotation={[0.2, sort.angle, 0.4]}
-                dispose={null}
-              />
-            ))}
-          </group>
-          <group />
-        </Detailed>
-      </group>
-    </group>
-  );
-}
-
-function Twin({ reduced }: { reduced: boolean }) {
-  const kit = getKitSafe();
-  const materials = getMaterials();
-  const spin = useRef<Group>(null);
-  const moon = useRef<Group>(null);
-  useFrame((_, delta) => {
-    if (reduced || !spin.current || !moon.current) return;
-    spin.current.rotation.y -= delta * 0.045;
-    moon.current.rotation.y += delta * 0.35;
-  });
-  return (
-    <group ref={spin}>
-      <mesh geometry={kit.sphere} material={materials.pearl} dispose={null} />
-      <mesh geometry={kit.pearlRing} material={materials.gold} rotation={[0.78, 0.3, 0.18]} dispose={null} />
-      <mesh
-        geometry={kit.sphere}
-        material={materials.glassGhost}
-        position={[0.68, 0.12, -0.26]}
-        scale={1.24}
-        dispose={null}
-      />
-      <mesh geometry={kit.twinRingA} material={materials.chrome} rotation={[0.95, 0.25, 0.5]} dispose={null} />
-      <mesh geometry={kit.twinRingB} material={materials.glass} rotation={[1.28, 0.45, 0.12]} dispose={null} />
-      <Detailed distances={[0, 48]}>
-        <group ref={moon}>
-          <mesh geometry={kit.sphere} material={materials.glass} position={[1.95, 0.35, 0.15]} scale={0.2} dispose={null} />
-        </group>
-        <group />
-      </Detailed>
-    </group>
-  );
-}
-
-function Planet({
-  piece,
-  index,
-  total,
-  selected,
-  reduced,
-  onSelect,
-}: {
-  piece: Piece;
-  index: number;
-  total: number;
-  selected: boolean;
-  reduced: boolean;
-  onSelect: (id: string) => void;
-}) {
-  const kind = appearanceFor(piece.id, index);
-  const position = placementFor(piece.id, index, total);
-  return (
-    <group position={position}>
-      {kind === "blinds" ? <Blinds reduced={reduced} /> : null}
-      {kind === "press" ? <Press reduced={reduced} /> : null}
-      {kind === "twin" ? <Twin reduced={reduced} /> : null}
-      <Hit id={piece.id} onSelect={onSelect} />
-      <LabelAnchor id={piece.id} hidden={selected} />
-    </group>
-  );
-}
-
-function Lighting() {
-  return (
-    <>
-      <hemisphereLight args={["#c9d6ff", "#2a1c14", 0.42]} />
-      <ambientLight intensity={0.08} />
-      <directionalLight position={[8, 10, 6]} intensity={3.4} color="#fff4e8" />
-      <directionalLight position={[-9, 3, -5]} intensity={1.35} color="#9eb6ff" />
-      <directionalLight position={[1, -6, -7]} intensity={0.7} color="#ffb089" />
-    </>
-  );
+  return <group ref={anchor} position={[0, lift, 0]} />;
 }
 
 export function Universe({
@@ -373,33 +489,30 @@ export function Universe({
   command: RigCommand | null;
   onSelect: (id: string) => void;
 }) {
-  qualityRef.current = quality;
+  const elapsed = useRef(0);
+  useFrame((_, delta) => {
+    if (!reduced) elapsed.current += delta;
+    sim.time = reduced ? 0 : elapsed.current;
+  });
   return (
     <>
-      <color attach="background" args={["#07080e"]} />
+      <color attach="background" args={["#070910"]} />
       <Sky />
-      <Stars count={quality.stars} />
-      <Lighting />
-      <Environment
-        resolution={quality.envResolution}
-        frames={1}
-        background={false}
-        environmentIntensity={1}
-      >
-        <Lightformer form="circle" intensity={40} color="#fff4e4" position={[5, 6, 6]} scale={1.1} />
-        <Lightformer form="circle" intensity={22} color="#c5d4ff" position={[-6, 3, 4]} scale={1.35} />
-        <Lightformer form="circle" intensity={18} color="#ffc29a" position={[1, -4, 7]} scale={1.5} />
-        <Lightformer form="circle" intensity={28} color="#ffffff" position={[-3, 5, -6]} scale={0.7} />
-        <Lightformer form="circle" intensity={12} color="#efe4ff" position={[7, -1, -3]} scale={1.8} />
-      </Environment>
+      <Starfield count={quality.stars} />
+      <Clusters count={quality.clusters} />
+      <Galaxies count={quality.galaxies} />
+      <Stars />
       {pieces.map((piece, index) => (
-        <Planet
+        <OrbitLine key={`${piece.id}-orbit`} id={piece.id} index={index} segments={quality.ringSegments} />
+      ))}
+      {pieces.map((piece, index) => (
+        <PlanetBody
           key={piece.id}
           piece={piece}
           index={index}
-          total={pieces.length}
-          selected={piece.id === selectedId}
+          quality={quality}
           reduced={reduced}
+          selected={piece.id === selectedId}
           onSelect={onSelect}
         />
       ))}
@@ -421,63 +534,79 @@ function Rig({
 }) {
   const { camera, gl, size, invalidate } = useThree();
   const aspect = size.width / Math.max(size.height, 1);
-  const initialRadius = homeRadius(aspect);
-  const spherical = useRef({ radius: initialRadius, phi: 1.16, theta: 0.5 });
-  const goal = useRef({ radius: initialRadius, phi: 1.16, theta: 0.5 });
+  const initial = homeRadius(aspect);
+  const spherical = useRef({ radius: initial, phi: 1.02, theta: 0.62 });
+  const goal = useRef({ radius: initial, phi: 1.02, theta: 0.62 });
   const pivot = useRef(new Vector3());
   const goalPivot = useRef(new Vector3());
   const saved = useRef<{ radius: number; phi: number; theta: number } | null>(null);
-  const userAdjusted = useRef(false);
+  const focusZoomed = useRef(false);
+  const userAimed = useRef(false);
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef(0);
   const down = useRef({ x: 0, y: 0 });
   const scratch = useRef({
-    spherical: new Spherical(),
     offset: new Vector3(),
     eye: new Vector3(),
     look: new Vector3(),
     right: new Vector3(),
     up: new Vector3(),
-    z: new Vector3(),
-    upAxis: new Vector3(0, 1, 0),
+    planet: new Vector3(),
   });
 
-  const mode = (): ViewMode => (selectedRef.current ? "focus" : "explore");
+  const limits = () => {
+    if (!selectedRef.current) return { min: 8, max: 160 };
+    const index = pieces.findIndex((piece) => piece.id === selectedRef.current);
+    const kind = kindFor(selectedRef.current, Math.max(index, 0));
+    const closest = focusDistance(visualRadius(kind), size.width, size.height);
+    return { min: closest, max: closest * 1.7 };
+  };
 
   const place = (dt: number) => {
+    if (selectedRef.current) {
+      const index = pieces.findIndex((piece) => piece.id === selectedRef.current);
+      const position = planetPosition(selectedRef.current, Math.max(index, 0), sim.time);
+      goalPivot.current.set(position.x, position.y, position.z);
+      const star = starPosition("primary", sim.time);
+      if (!userAimed.current) {
+        goal.current.theta = Math.atan2(star.x - position.x, star.z - position.z);
+        goal.current.phi = 1.12;
+      }
+      const bound = limits();
+      goal.current.radius = focusZoomed.current
+        ? clamp(goal.current.radius, bound.min, bound.max)
+        : bound.min;
+    }
     const current = spherical.current;
     const target = goal.current;
+    const lambda = selectedRef.current ? 6.5 : 2.6;
     if (reduced || dt === 0) {
       current.radius = target.radius;
       current.phi = target.phi;
       current.theta = target.theta;
       pivot.current.copy(goalPivot.current);
     } else {
-      const lambda = 2.7;
       current.radius = MathUtils.damp(current.radius, target.radius, lambda, dt);
       current.phi = MathUtils.damp(current.phi, target.phi, lambda, dt);
       current.theta = MathUtils.damp(current.theta, shortestAngle(current.theta, target.theta), lambda, dt);
-      const alpha = 1 - Math.exp(-lambda * dt);
-      pivot.current.lerp(goalPivot.current, alpha);
+      pivot.current.lerp(goalPivot.current, 1 - Math.exp(-lambda * dt));
     }
-
     const bag = scratch.current;
-    bag.spherical.set(current.radius, current.phi, current.theta);
-    bag.offset.setFromSpherical(bag.spherical);
+    const offset = sphericalOffset(current.radius, current.phi, current.theta);
+    bag.offset.set(offset.x, offset.y, offset.z);
     bag.eye.copy(pivot.current).add(bag.offset);
     bag.look.copy(pivot.current);
-    if (selectedId) {
-      bag.z.copy(bag.offset).normalize();
-      bag.right.crossVectors(bag.upAxis, bag.z);
-      if (bag.right.lengthSq() < 1e-5) bag.right.set(1, 0, 0);
-      bag.right.normalize();
-      bag.up.crossVectors(bag.z, bag.right).normalize();
-      const portrait = size.width / Math.max(size.height, 1) < 0.9;
-      const reach = current.radius * 0.24;
-      bag.look.addScaledVector(bag.right, portrait ? 0 : -reach);
-      bag.look.addScaledVector(bag.up, portrait ? -reach * 0.95 : -reach * 0.08);
+    if (selectedRef.current) {
+      const look = framedLook(
+        { x: bag.eye.x, y: bag.eye.y, z: bag.eye.z },
+        { x: pivot.current.x, y: pivot.current.y, z: pivot.current.z },
+        size.width,
+        size.height,
+        current.radius,
+      );
+      bag.look.set(look.x, look.y, look.z);
     }
     camera.position.copy(bag.eye);
     camera.lookAt(bag.look);
@@ -490,19 +619,19 @@ function Rig({
 
   useLayoutEffect(() => {
     if (!selectedId) return;
-    if (!saved.current) {
-      saved.current = { ...goal.current };
-    }
+    if (!saved.current) saved.current = { ...goal.current };
+    focusZoomed.current = false;
+    userAimed.current = false;
     const index = pieces.findIndex((piece) => piece.id === selectedId);
-    const [x, y, z] = placementFor(selectedId, Math.max(index, 0), pieces.length);
-    goalPivot.current.set(x, y, z);
-    goal.current.radius = focusDistance();
-    goal.current.phi = clampPhi(goal.current.phi * 0.62 + 1.02 * 0.38);
+    const kind = kindFor(selectedId, Math.max(index, 0));
+    goal.current.radius = focusDistance(visualRadius(kind), size.width, size.height);
+    goal.current.phi = clampPhi(goal.current.phi * 0.55 + 1.08 * 0.45);
     invalidate();
-  }, [selectedId, pieces, invalidate]);
+  }, [selectedId, pieces, invalidate, size.width, size.height]);
 
   useLayoutEffect(() => {
-    if (selectedId || userAdjusted.current) return;
+    if (selectedId) return;
+    if (saved.current) return;
     goal.current.radius = homeRadius(size.width / Math.max(size.height, 1));
     invalidate();
   }, [size.width, size.height, selectedId, invalidate]);
@@ -512,13 +641,16 @@ function Rig({
     const target = goal.current;
     if (command.type === "reset") {
       saved.current = null;
-      userAdjusted.current = false;
+      focusZoomed.current = false;
+      userAimed.current = false;
       goalPivot.current.set(0, 0, 0);
       target.radius = homeRadius(size.width / Math.max(size.height, 1));
-      target.phi = 1.16;
-      target.theta = 0.5;
+      target.phi = 1.02;
+      target.theta = 0.62;
     } else if (command.type === "back") {
       goalPivot.current.set(0, 0, 0);
+      focusZoomed.current = false;
+      userAimed.current = false;
       if (saved.current) {
         target.radius = saved.current.radius;
         target.phi = saved.current.phi;
@@ -526,18 +658,21 @@ function Rig({
         saved.current = null;
       } else {
         target.radius = homeRadius(size.width / Math.max(size.height, 1));
-        target.phi = 1.16;
-        target.theta = 0.5;
+        target.phi = 1.02;
+        target.theta = 0.62;
       }
     } else if (command.type === "left" || command.type === "right") {
-      userAdjusted.current = true;
-      target.theta += command.type === "left" ? 0.2 : -0.2;
+      target.theta += command.type === "left" ? 0.18 : -0.18;
     } else if (command.type === "up" || command.type === "down") {
-      userAdjusted.current = true;
-      target.phi = clampPhi(target.phi + (command.type === "down" ? 0.12 : -0.12));
+      target.phi = clampPhi(target.phi + (command.type === "down" ? 0.1 : -0.1));
     } else if (command.type === "in" || command.type === "out") {
-      userAdjusted.current = true;
-      target.radius = zoomRadius(target.radius, command.type === "out" ? 220 : -220, mode());
+      const bound = limits();
+      if (selectedRef.current) focusZoomed.current = true;
+      target.radius = clamp(
+        target.radius * (command.type === "out" ? 1.12 : 0.9),
+        bound.min,
+        bound.max,
+      );
     }
     invalidate();
   }, [command, invalidate, size.width, size.height]);
@@ -545,7 +680,6 @@ function Rig({
   useLayoutEffect(() => {
     const element = gl.domElement;
     const active = pointers.current;
-
     const onDown = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       pointerGate.dragged = false;
@@ -554,7 +688,6 @@ function Rig({
       pinch.current = 0;
       element.setPointerCapture(event.pointerId);
     };
-
     const onMove = (event: PointerEvent) => {
       const previous = active.get(event.pointerId);
       if (!previous) return;
@@ -563,46 +696,48 @@ function Rig({
         pointerGate.dragged = true;
         element.style.cursor = "grabbing";
       }
+      const bound = limits();
       if (active.size >= 2) {
         const points = [...active.values()];
-        const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+        const span = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
         if (pinch.current > 0) {
-          const next = clampRadius(spherical.current.radius * (pinch.current / distance), mode());
+          const next = clamp(spherical.current.radius * (pinch.current / span), bound.min, bound.max);
           spherical.current.radius = next;
           goal.current.radius = next;
-          userAdjusted.current = true;
+          if (selectedRef.current) focusZoomed.current = true;
         }
-        pinch.current = distance;
+        pinch.current = span;
         invalidate();
         return;
       }
       const dx = event.clientX - previous.x;
       const dy = event.clientY - previous.y;
-      spherical.current.theta -= dx * 0.0052;
-      spherical.current.phi = clampPhi(spherical.current.phi + dy * 0.0042);
+      spherical.current.theta -= dx * 0.005;
+      spherical.current.phi = clampPhi(spherical.current.phi + dy * 0.004);
       goal.current.theta = spherical.current.theta;
       goal.current.phi = spherical.current.phi;
-      userAdjusted.current = true;
+      if (selectedRef.current) userAimed.current = true;
       invalidate();
     };
-
     const onUp = (event: PointerEvent) => {
       active.delete(event.pointerId);
       pinch.current = 0;
       if (active.size === 0) element.style.cursor = "grab";
       if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
     };
-
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 160 : 1;
-      goal.current.radius = zoomRadius(goal.current.radius, event.deltaY * scale, mode());
-      userAdjusted.current = true;
+      const bound = limits();
+      goal.current.radius = clamp(
+        goal.current.radius * Math.exp(event.deltaY * scale * 0.00115),
+        bound.min,
+        bound.max,
+      );
+      if (selectedRef.current) focusZoomed.current = true;
       invalidate();
     };
-
     const onContext = (event: Event) => event.preventDefault();
-
     element.addEventListener("pointerdown", onDown);
     element.addEventListener("pointermove", onMove);
     element.addEventListener("pointerup", onUp);
@@ -617,17 +752,14 @@ function Rig({
       element.removeEventListener("wheel", onWheel);
       element.removeEventListener("contextmenu", onContext);
     };
-  }, [gl, invalidate]);
+  }, [gl, invalidate, size.width, size.height, pieces]);
 
   useFrame((_, delta) => {
     place(delta);
     if (!reduced) return;
-    const current = spherical.current;
-    const target = goal.current;
     const moving =
-      Math.abs(current.radius - target.radius) > 0.02 ||
-      Math.abs(current.phi - target.phi) > 0.002 ||
-      pivot.current.distanceTo(goalPivot.current) > 0.02;
+      Math.abs(spherical.current.radius - goal.current.radius) > 0.03 ||
+      pivot.current.distanceTo(goalPivot.current) > 0.04;
     if (moving) invalidate();
   });
 

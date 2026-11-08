@@ -3,13 +3,12 @@ export type Quality = {
   dprMax: number;
   antialias: boolean;
   stars: number;
-  envResolution: number;
   sphereWidth: number;
   sphereHeight: number;
-  slatCount: number;
-  bladeCount: number;
-  tickCount: number;
-  latheSteps: number;
+  ringSegments: number;
+  octaves: number;
+  galaxies: number;
+  clusters: number;
 };
 
 export type QualityInput = {
@@ -26,30 +25,28 @@ export function qualityFrom(input: QualityInput): Quality {
   if (adapted) {
     return {
       tier: "adapted",
-      dprMax: 1.25,
+      dprMax: 1.2,
       antialias: false,
-      stars: 900,
-      envResolution: 64,
-      sphereWidth: 48,
-      sphereHeight: 32,
-      slatCount: 16,
-      bladeCount: 28,
-      tickCount: 48,
-      latheSteps: 56,
+      stars: 1600,
+      sphereWidth: 72,
+      sphereHeight: 48,
+      ringSegments: 96,
+      octaves: 4,
+      galaxies: 2,
+      clusters: 3,
     };
   }
   return {
     tier: "full",
-    dprMax: 1.6,
+    dprMax: 1.5,
     antialias: true,
-    stars: 1700,
-    envResolution: 128,
-    sphereWidth: 80,
-    sphereHeight: 56,
-    slatCount: 22,
-    bladeCount: 42,
-    tickCount: 72,
-    latheSteps: 96,
+    stars: 4200,
+    sphereWidth: 128,
+    sphereHeight: 96,
+    ringSegments: 160,
+    octaves: 5,
+    galaxies: 3,
+    clusters: 4,
   };
 }
 

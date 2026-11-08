@@ -2,8 +2,8 @@ import { Component, useEffect, useMemo, useRef, useState, type CSSProperties, ty
 import { Canvas } from "@react-three/fiber";
 import { ACESFilmicToneMapping } from "three";
 import { pieces } from "./data/content";
-import { ACCENT, appearanceFor } from "./scene/layout";
-import { HOME_FOV_DEG } from "./scene/rig";
+import { accentFor } from "./scene/system";
+import { FOV_DEG } from "./scene/framing";
 import { detectQuality } from "./scene/quality";
 import { Universe, type RigCommand } from "./scene/Scene";
 import { Chrome, Fallback, Hint, Panel } from "./ui/Interface";
@@ -167,7 +167,7 @@ export function App() {
               id={`marker-${piece.id}`}
               type="button"
               className="marker"
-              style={{ "--accent": ACCENT[appearanceFor(piece.id, index)] } as CSSProperties}
+              style={{ "--accent": accentFor(piece.id, index) } as CSSProperties}
               onClick={() => open(piece.id)}
             >
               <span className="marker-dot" aria-hidden="true" />
@@ -181,7 +181,7 @@ export function App() {
           <Canvas
             dpr={[1, quality.dprMax]}
             frameloop={reduced ? "demand" : "always"}
-            camera={{ fov: HOME_FOV_DEG, near: 0.08, far: 420, position: [0, 2, 24] }}
+            camera={{ fov: FOV_DEG, near: 0.05, far: 1200, position: [0, 8, 28] }}
             gl={{
               antialias: quality.antialias,
               alpha: false,
@@ -192,7 +192,7 @@ export function App() {
             onCreated={({ gl }) => {
               gl.setClearColor("#07080e");
               gl.toneMapping = ACESFilmicToneMapping;
-              gl.toneMappingExposure = 1.28;
+              gl.toneMappingExposure = 1.05;
               gl.domElement.addEventListener("webglcontextlost", (event) => {
                 event.preventDefault();
                 setFailed(true);
