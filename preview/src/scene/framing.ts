@@ -105,11 +105,35 @@ export function homeCamera(width: number, height: number, time = 0): CameraPose 
   return { eye, look: { x: 0, y: 0.08, z: 0 }, dist };
 }
 
+export const CAMERA_NEAR = 0.05;
+
 export function focusDistance(visualR: number, width: number, height: number) {
   const safe = safeViewport(width, height, true);
   const fit = Math.min(safe.w, safe.h) * 0.74;
   const dist = (visualR * height) / (Math.max(fit, 24) * Math.tan(halfFov()));
   return Math.max(dist, visualR * 2.35);
+}
+
+/**
+ * Closest the eye may come to a focused planet's centre. The ring system,
+ * whatever its tilt, stays inside this sphere, and the near plane stays
+ * short of the surface.
+ */
+export function focusClearance(visualR: number, near = CAMERA_NEAR): number {
+  return visualR + near + Math.max(0.45, visualR * 0.22);
+}
+
+export function minimumFocusRadius(visualR: number, width: number, height: number): number {
+  return Math.max(focusDistance(visualR, width, height), focusClearance(visualR));
+}
+
+/** Push an eye that has entered the envelope back out along the same ray. */
+export function clearEye(eye: Vec3, planet: Vec3, minDist: number): Vec3 {
+  const delta = sub(eye, planet);
+  const d = Math.hypot(delta.x, delta.y, delta.z);
+  if (d >= minDist) return eye;
+  if (d < 1e-5) return add(planet, { x: 0, y: 0, z: minDist });
+  return add(planet, scale(delta, minDist / d));
 }
 
 export function cameraBasis(eye: Vec3, look: Vec3) {
@@ -152,7 +176,7 @@ export function focusCamera(
   phi = 1.12,
   theta = 0.4,
 ): CameraPose {
-  const dist = focusDistance(visualR, width, height);
+  const dist = minimumFocusRadius(visualR, width, height);
   const eye = add(planet, sphericalOffset(dist, phi, theta));
   return { eye, look: framedLook(eye, planet, width, height, dist), dist };
 }

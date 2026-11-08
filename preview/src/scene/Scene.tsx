@@ -23,8 +23,10 @@ import {
 import type { Piece } from "../data/content";
 import {
   clamp,
-  focusDistance,
+  clearEye,
+  focusClearance,
   framedLook,
+  minimumFocusRadius,
   homeRadius,
   shortestAngle,
   sphericalOffset,
@@ -286,7 +288,7 @@ function Galaxies({ count }: { count: number }) {
   );
 }
 
-function OrbitLine({ id, index, segments }: { id: string; index: number; segments: number }) {
+function OrbitLine({ id, index, segments, hidden }: { id: string; index: number; segments: number; hidden: boolean }) {
   const line = useMemo(() => {
     const orbit = orbitFor(id, index);
     const positions = new Float32Array((segments + 1) * 3);
@@ -298,8 +300,12 @@ function OrbitLine({ id, index, segments }: { id: string; index: number; segment
     }
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(positions, 3));
-    return new ThreeLine(geometry, new LineBasicMaterial({ color: "#d9c7a2", transparent: true, opacity: 0.28 }));
+    return new ThreeLine(
+      geometry,
+      new LineBasicMaterial({ color: "#d9c7a2", transparent: true, opacity: 0.28, depthWrite: false }),
+    );
   }, [id, index, segments]);
+  line.visible = !hidden;
   return <primitive object={line} />;
 }
 
@@ -349,10 +355,12 @@ function prominenceGeometry(radius: number) {
       const a = (s / sides) * Math.PI * 2;
       const c = Math.cos(a);
       const sn = Math.sin(a);
+      const along = Math.sin(Math.PI * curr.t);
+      const localTube = tube * (0.18 + Math.pow(along, 0.72) * 1.05);
       positions.push(
-        curr.x + (px * c + qx * sn) * tube,
-        curr.y + (py * c + qy * sn) * tube,
-        curr.z + (pz * c + qz * sn) * tube,
+        curr.x + (px * c + qx * sn) * localTube,
+        curr.y + (py * c + qy * sn) * localTube,
+        curr.z + (pz * c + qz * sn) * localTube,
       );
       uvs.push(curr.t, s / sides);
     }
@@ -776,7 +784,13 @@ export function Universe({
       <Stars glow={glow} />
       <Belt count={quality.rocks} pieces={pieces} selectedId={selectedId} />
       {pieces.map((piece, index) => (
-        <OrbitLine key={`${piece.id}-orbit`} id={piece.id} index={index} segments={quality.ringSegments} />
+        <OrbitLine
+          key={`${piece.id}-orbit`}
+          id={piece.id}
+          index={index}
+          segments={quality.ringSegments}
+          hidden={piece.id === selectedId}
+        />
       ))}
       {pieces.map((piece, index) => (
         <PlanetBody
@@ -835,7 +849,7 @@ function Rig({
     if (!selectedRef.current) return { min: 8, max: 160 };
     const index = pieces.findIndex((piece) => piece.id === selectedRef.current);
     const kind = kindFor(selectedRef.current, Math.max(index, 0));
-    const closest = focusDistance(visualRadius(kind), size.width, size.height);
+    const closest = minimumFocusRadius(visualRadius(kind), size.width, size.height);
     return { min: closest, max: closest * 1.7 };
   };
 
@@ -878,14 +892,36 @@ function Rig({
     bag.eye.copy(pivot.current).add(bag.offset);
     bag.look.copy(pivot.current);
     if (selectedRef.current) {
+      const index = pieces.findIndex((piece) => piece.id === selectedRef.current);
+      const kind = kindFor(selectedRef.current, Math.max(index, 0));
+      const planet = planetPosition(selectedRef.current, Math.max(index, 0), sim.time);
+      const minDist = focusClearance(visualRadius(kind));
+      const cleared = clearEye(
+        { x: bag.eye.x, y: bag.eye.y, z: bag.eye.z },
+        planet,
+        minDist,
+      );
+      bag.eye.set(cleared.x, cleared.y, cleared.z);
+      const kept = Math.hypot(cleared.x - planet.x, cleared.y - planet.y, cleared.z - planet.z);
+      current.radius = Math.max(current.radius, kept);
+      goal.current.radius = Math.max(goal.current.radius, kept);
       const look = framedLook(
         { x: bag.eye.x, y: bag.eye.y, z: bag.eye.z },
-        { x: pivot.current.x, y: pivot.current.y, z: pivot.current.z },
+        planet,
         size.width,
         size.height,
-        current.radius,
+        kept,
       );
       bag.look.set(look.x, look.y, look.z);
+      const gap = Math.max(0.25, kept - visualRadius(kind));
+      const near = Math.min(0.12, Math.max(0.02, gap * 0.18));
+      if (Math.abs(camera.near - near) > 0.004) {
+        camera.near = near;
+        camera.updateProjectionMatrix();
+      }
+    } else if (Math.abs(camera.near - 0.05) > 0.004) {
+      camera.near = 0.05;
+      camera.updateProjectionMatrix();
     }
     camera.position.copy(bag.eye);
     camera.lookAt(bag.look);
@@ -903,7 +939,7 @@ function Rig({
     userAimed.current = false;
     const index = pieces.findIndex((piece) => piece.id === selectedId);
     const kind = kindFor(selectedId, Math.max(index, 0));
-    goal.current.radius = focusDistance(visualRadius(kind), size.width, size.height);
+    goal.current.radius = minimumFocusRadius(visualRadius(kind), size.width, size.height);
     goal.current.phi = clampPhi(goal.current.phi * 0.55 + 1.08 * 0.45);
     invalidate();
   }, [selectedId, pieces, invalidate, size.width, size.height]);

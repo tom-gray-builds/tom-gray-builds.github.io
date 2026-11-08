@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   circleHitsRect,
   diskInside,
+  clearEye,
   focusCamera,
+  focusClearance,
   homeCamera,
+  minimumFocusRadius,
   panelRect,
   projectSphere,
   safeViewport,
@@ -122,9 +125,33 @@ describe("focus framing", () => {
           expect(diskInside(disk, safe, 2), `${piece.id} ${viewport.name} t=${time}`).toBe(true);
           expect(circleHitsRect(disk, panel), `${piece.id} hits panel`).toBe(false);
           expect(Math.abs(camera.dist - distance(camera.eye, position))).toBeLessThan(0.02);
+          expect(camera.dist).toBeGreaterThanOrEqual(focusClearance(radius) - 1e-6);
           if (time > 0) expect(distance(position, previous)).toBeGreaterThan(0.05);
           previous = position;
         }
+      }
+    }
+  });
+});
+
+describe("focused zoom clearance", () => {
+  it("keeps a manual zoom outside the whole ring envelope, and pushes an eye that entered it back out", () => {
+    for (const viewport of viewports) {
+      for (const [index, piece] of pieces.entries()) {
+        const radius = visualRadius(kindFor(piece.id, index));
+        const closest = minimumFocusRadius(radius, viewport.width, viewport.height);
+        const clearance = focusClearance(radius);
+        expect(closest, piece.id).toBeGreaterThan(radius);
+        expect(closest - radius, piece.id).toBeGreaterThan(0.4);
+        expect(clearance).toBeGreaterThan(radius);
+        const planet = planetPosition(piece.id, index, 18);
+        const inside = { x: planet.x + radius * 0.25, y: planet.y, z: planet.z - radius * 0.4 };
+        const cleared = clearEye(inside, planet, clearance);
+        expect(distance(cleared, planet)).toBeGreaterThanOrEqual(clearance - 1e-6);
+        expect(distance(inside, planet)).toBeLessThan(radius);
+        const safe = { x: planet.x, y: planet.y + closest + 2, z: planet.z };
+        const untouched = clearEye(safe, planet, clearance);
+        expect(distance(untouched, safe)).toBeLessThan(1e-6);
       }
     }
   });

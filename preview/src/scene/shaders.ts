@@ -367,13 +367,17 @@ void main() {
   float side = length(fromStar - view * dot(fromStar, view));
   float limb = smoothstep(uRadius * 0.62, uRadius * 1.08, side);
   float along = vUv.x;
-  float ends = smoothstep(0.0, 0.07, along) * smoothstep(1.0, 0.9, along);
-  float turb = 0.65 + 0.35 * fbm(vec3(vUv * vec2(6.0, 3.0), uAmt * 3.0));
-  float alpha = ends * turb * uAmt * (0.72 + 0.55 * limb);
-  if (alpha < 0.03) discard;
-  vec3 col = mix(uColor * vec3(1.0, 0.45, 0.12), vec3(1.0, 0.92, 0.62), turb);
-  col *= 0.75 + limb * 0.5;
-  gl_FragColor = vec4(col, alpha * (0.55 + turb * 0.45));
+  float ends = smoothstep(0.0, 0.16, along) * smoothstep(1.0, 0.78, along);
+  float turb = fbm(vec3(vUv * vec2(9.0, 4.0), uAmt * 2.0 + along * 3.0));
+  float alpha = ends * (0.35 + turb * 0.65) * uAmt * (0.28 + 0.55 * limb);
+  if (alpha < 0.02) discard;
+  vec3 hot = vec3(1.0, 0.93, 0.55);
+  vec3 warm = vec3(1.0, 0.42, 0.08);
+  vec3 deep = vec3(0.72, 0.12, 0.02);
+  vec3 col = mix(deep, warm, smoothstep(0.2, 0.7, turb));
+  col = mix(col, hot, smoothstep(0.62, 0.92, turb) * ends);
+  col *= uColor * (0.55 + limb * 0.35);
+  gl_FragColor = vec4(col, alpha);
 }
 `;
 
