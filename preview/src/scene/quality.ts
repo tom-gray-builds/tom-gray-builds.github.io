@@ -9,6 +9,7 @@ export type Quality = {
   octaves: number;
   galaxies: number;
   clusters: number;
+  rocks: number;
 };
 
 export type QualityInput = {
@@ -34,6 +35,7 @@ export function qualityFrom(input: QualityInput): Quality {
       octaves: 4,
       galaxies: 2,
       clusters: 3,
+      rocks: 420,
     };
   }
   return {
@@ -47,6 +49,7 @@ export function qualityFrom(input: QualityInput): Quality {
     octaves: 5,
     galaxies: 3,
     clusters: 4,
+    rocks: 1100,
   };
 }
 

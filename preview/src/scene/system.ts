@@ -19,10 +19,22 @@ const KINDS: Record<string, PlanetKind> = {
 };
 
 const ACCENT: Record<PlanetKind, string> = {
-  ocean: "#8fd0ea",
-  rocky: "#e2b48a",
-  giant: "#f0d7a4",
+  ocean: "#9fd0dc",
+  rocky: "#e07a3d",
+  giant: "#9fe0d2",
 };
+
+export type SurfaceName = "eyeball" | "lava" | "ice-giant";
+
+const SURFACES: Record<string, SurfaceName> = {
+  "smart-blinds": "eyeball",
+  fontloop: "lava",
+  avatars: "ice-giant",
+};
+
+export function surfaceFor(id: string, index: number): SurfaceName {
+  return SURFACES[id] ?? (["eyeball", "lava", "ice-giant"] as const)[index % 3];
+}
 
 /**
  * Known projects get a composed orbit. Anything added to projects.json later

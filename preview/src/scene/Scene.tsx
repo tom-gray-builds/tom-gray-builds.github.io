@@ -1,36 +1,25 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { useFrame, useLoader, useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import {
   AdditiveBlending,
   BackSide,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
-  ClampToEdgeWrapping,
   Color,
   DoubleSide,
+  IcosahedronGeometry,
+  InstancedMesh,
   Line as ThreeLine,
   LineBasicMaterial,
-  LinearFilter,
   MathUtils,
-  NoColorSpace,
-  RepeatWrapping,
+  Object3D,
   ShaderMaterial,
   SphereGeometry,
   SRGBColorSpace,
-  TextureLoader,
   Vector3,
   type Group,
-  type Texture,
 } from "three";
-import earthDayUrl from "../assets/textures/earth-day.jpg";
-import earthCloudsUrl from "../assets/textures/earth-clouds.jpg";
-import earthNormalUrl from "../assets/textures/earth-normal.jpg";
-import earthSpecUrl from "../assets/textures/earth-spec.jpg";
-import marsUrl from "../assets/textures/mars.jpg";
-import jupiterUrl from "../assets/textures/jupiter.jpg";
-import sunUrl from "../assets/textures/sun.jpg";
-import ringUrl from "../assets/textures/saturn-ring.png";
 import type { Piece } from "../data/content";
 import {
   clamp,
@@ -48,19 +37,33 @@ import {
 } from "./clusters";
 import type { Quality } from "./quality";
 import { pointerExceededDrag, pointerGate } from "./pointer";
+import { beltRocks, type Rock } from "./belt";
 import {
   AIR_FRAG,
   AIR_VERT,
+  EYE_FRAG,
   GALAXY_FRAG,
-  MAP_FRAG,
-  MAP_VERT,
+  ICE_FRAG,
+  LAVA_FRAG,
+  PROMINENCE_FRAG,
+  PROMINENCE_VERT,
+  RELIEF_VERT,
   RING_FRAG,
   RING_VERT,
+  ROCK_FRAG,
+  ROCK_VERT,
   SKY_FRAG,
   SKY_VERT,
   STAR_FRAG,
   STAR_VERT,
 } from "./shaders";
+import {
+  STAR_ACTIVITY,
+  activeFlare,
+  flareDirection,
+  flareEnvelope,
+  stellarBrightness,
+} from "./stellar";
 import {
   BINARY,
   bodyRadius,
@@ -71,6 +74,7 @@ import {
   planetPosition,
   sim,
   starPosition,
+  surfaceFor,
   visualRadius,
 } from "./system";
 
@@ -84,17 +88,6 @@ const STAR_B = new Color(BINARY.secondary.color);
 
 function clampPhi(phi: number) {
   return clamp(phi, 0.32, Math.PI - 0.32);
-}
-
-function prepareTexture(texture: Texture, color: boolean) {
-  texture.colorSpace = color ? SRGBColorSpace : NoColorSpace;
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
-  texture.anisotropy = 8;
-  texture.minFilter = LinearFilter;
-  texture.magFilter = LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
 }
 
 function softGlowTexture() {
@@ -115,28 +108,6 @@ function softGlowTexture() {
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   return texture;
-}
-
-function surfaceMaterial(map: Texture, normal: Texture | null, spec: Texture | null, clouds: Texture | null) {
-  return new ShaderMaterial({
-    vertexShader: MAP_VERT,
-    fragmentShader: MAP_FRAG,
-    uniforms: {
-      uStarA: { value: new Vector3() },
-      uStarB: { value: new Vector3() },
-      uColorA: { value: STAR_A },
-      uColorB: { value: STAR_B },
-      uCamera: { value: new Vector3() },
-      uTime: { value: 0 },
-      uHasNormal: { value: normal ? 1 : 0 },
-      uHasSpec: { value: spec ? 1 : 0 },
-      uHasClouds: { value: clouds ? 1 : 0 },
-      uMap: { value: map },
-      uNormal: { value: normal ?? map },
-      uSpec: { value: spec ?? map },
-      uClouds: { value: clouds ?? map },
-    },
-  });
 }
 
 function pushStars(material: ShaderMaterial, camera: Vector3) {
@@ -332,9 +303,83 @@ function OrbitLine({ id, index, segments }: { id: string; index: number; segment
   return <primitive object={line} />;
 }
 
-function Stars({ sun, glow }: { sun: Texture; glow: Texture }) {
+function prominenceGeometry(radius: number) {
+  const segments = 28;
+  const sides = 7;
+  const height = radius * 1.45;
+  const tube = radius * 0.085;
+  const foot = 0.46;
+  const center: { x: number; y: number; z: number; t: number }[] = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    const ang = (t - 0.5) * foot * 2;
+    const lift = Math.sin(Math.PI * t) * height;
+    const radial = radius + lift;
+    center.push({ x: Math.sin(ang) * radial, y: Math.cos(ang) * radial, z: 0, t });
+  }
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  center.forEach((curr, i) => {
+    const prev = center[Math.max(i - 1, 0)];
+    const next = center[Math.min(i + 1, center.length - 1)];
+    let tx = next.x - prev.x;
+    let ty = next.y - prev.y;
+    let tz = next.z - prev.z;
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl;
+    ty /= tl;
+    tz /= tl;
+    let px = 0;
+    let py = tz;
+    let pz = -ty;
+    if (Math.abs(ty) < 0.85) {
+      px = ty;
+      py = -tx;
+      pz = 0;
+    }
+    const pl = Math.hypot(px, py, pz) || 1;
+    px /= pl;
+    py /= pl;
+    pz /= pl;
+    const qx = ty * pz - tz * py;
+    const qy = tz * px - tx * pz;
+    const qz = tx * py - ty * px;
+    for (let s = 0; s < sides; s += 1) {
+      const a = (s / sides) * Math.PI * 2;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      positions.push(
+        curr.x + (px * c + qx * sn) * tube,
+        curr.y + (py * c + qy * sn) * tube,
+        curr.z + (pz * c + qz * sn) * tube,
+      );
+      uvs.push(curr.t, s / sides);
+    }
+  });
+  for (let i = 0; i < segments; i += 1) {
+    for (let s = 0; s < sides; s += 1) {
+      const a = i * sides + s;
+      const b = i * sides + ((s + 1) % sides);
+      const c = (i + 1) * sides + s;
+      const d = (i + 1) * sides + ((s + 1) % sides);
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute("uv", new BufferAttribute(new Float32Array(uvs), 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function Stars({ glow }: { glow: ReturnType<typeof softGlowTexture> }) {
   const primary = useRef<Group>(null);
   const secondary = useRef<Group>(null);
+  const loopA = useRef<Group>(null);
+  const loopB = useRef<Group>(null);
+  const up = useMemo(() => new Vector3(0, 1, 0), []);
   const materials = useMemo(() => {
     const make = (color: Color, seed: number) =>
       new ShaderMaterial({
@@ -345,35 +390,87 @@ function Stars({ sun, glow }: { sun: Texture; glow: Texture }) {
           uCamera: { value: new Vector3() },
           uTime: { value: 0 },
           uSeed: { value: seed },
-          uMap: { value: sun },
+          uFlareDir: { value: new Vector3(0, 1, 0) },
+          uFlareAmt: { value: 0 },
+          uRadiance: { value: 1 },
         },
       });
-    return { primary: make(STAR_A, 0.2), secondary: make(STAR_B, 2.7) };
-  }, [sun]);
+    const loop = (color: Color, radius: number) =>
+      new ShaderMaterial({
+        vertexShader: PROMINENCE_VERT,
+        fragmentShader: PROMINENCE_FRAG,
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+        uniforms: {
+          uCamera: { value: new Vector3() },
+          uCenter: { value: new Vector3() },
+          uColor: { value: color },
+          uAmt: { value: 0 },
+          uRadius: { value: radius },
+        },
+      });
+    return {
+      primary: make(STAR_A, STAR_ACTIVITY.primary),
+      secondary: make(STAR_B, STAR_ACTIVITY.secondary),
+      loopA: loop(STAR_A, BINARY.primary.radius),
+      loopB: loop(STAR_B, BINARY.secondary.radius),
+    };
+  }, []);
+  const arches = useMemo(
+    () => ({
+      primary: prominenceGeometry(BINARY.primary.radius),
+      secondary: prominenceGeometry(BINARY.secondary.radius),
+    }),
+    [],
+  );
   useFrame(({ camera }) => {
-    const a = starPosition("primary", sim.time);
-    const b = starPosition("secondary", sim.time);
-    primary.current?.position.set(a.x, a.y, a.z);
-    secondary.current?.position.set(b.x, b.y, b.z);
-    for (const material of [materials.primary, materials.secondary]) {
-      material.uniforms.uCamera.value.copy(camera.position);
-      material.uniforms.uTime.value = sim.time;
-    }
+    const place = (
+      group: Group | null,
+      loop: Group | null,
+      body: ShaderMaterial,
+      ribbon: ShaderMaterial,
+      which: "primary" | "secondary",
+      seed: number,
+    ) => {
+      const at = starPosition(which, sim.time);
+      group?.position.set(at.x, at.y, at.z);
+      body.uniforms.uCamera.value.copy(camera.position);
+      body.uniforms.uTime.value = sim.time;
+      body.uniforms.uRadiance.value = stellarBrightness(seed, sim.time);
+      const flare = activeFlare(seed, sim.time);
+      const amount = flare ? flareEnvelope(sim.time, flare) * flare.strength : 0;
+      const dir = flare ? flareDirection(flare) : { x: 0, y: 1, z: 0 };
+      body.uniforms.uFlareAmt.value = amount;
+      body.uniforms.uFlareDir.value.set(dir.x, dir.y, dir.z);
+      ribbon.uniforms.uCamera.value.copy(camera.position);
+      ribbon.uniforms.uCenter.value.set(at.x, at.y, at.z);
+      ribbon.uniforms.uAmt.value = amount;
+      if (loop) {
+        loop.visible = amount > 0.04;
+        loop.quaternion.setFromUnitVectors(up, body.uniforms.uFlareDir.value);
+        const grow = 0.62 + 0.38 * (flare ? flareEnvelope(sim.time, flare) : 0);
+        loop.scale.setScalar(grow);
+      }
+    };
+    place(primary.current, loopA.current, materials.primary, materials.loopA, "primary", STAR_ACTIVITY.primary);
+    place(secondary.current, loopB.current, materials.secondary, materials.loopB, "secondary", STAR_ACTIVITY.secondary);
   });
   const star = (radius: number, material: ShaderMaterial, color: Color) => (
     <>
       <mesh>
-        <sphereGeometry args={[radius, 64, 48]} />
+        <sphereGeometry args={[radius, 72, 56]} />
         <primitive object={material} attach="material" />
       </mesh>
-      <sprite scale={[radius * 3.3, radius * 3.3, 1]}>
+      <sprite scale={[radius * 3.2, radius * 3.2, 1]}>
         <spriteMaterial
           map={glow}
           color={color}
           transparent
           depthWrite={false}
           blending={AdditiveBlending}
-          opacity={0.7}
+          opacity={0.5}
           depthTest
         />
       </sprite>
@@ -381,27 +478,35 @@ function Stars({ sun, glow }: { sun: Texture; glow: Texture }) {
   );
   return (
     <group>
-      <group ref={primary}>{star(BINARY.primary.radius, materials.primary, STAR_A)}</group>
-      <group ref={secondary}>{star(BINARY.secondary.radius, materials.secondary, STAR_B)}</group>
+      <group ref={primary}>
+        {star(BINARY.primary.radius, materials.primary, STAR_A)}
+        <group ref={loopA}>
+          <mesh geometry={arches.primary} material={materials.loopA} frustumCulled={false} />
+        </group>
+      </group>
+      <group ref={secondary}>
+        {star(BINARY.secondary.radius, materials.secondary, STAR_B)}
+        <group ref={loopB}>
+          <mesh geometry={arches.secondary} material={materials.loopB} frustumCulled={false} />
+        </group>
+      </group>
     </group>
   );
 }
 
-type SurfaceMaps = {
-  earth: Texture;
-  clouds: Texture;
-  normal: Texture;
-  spec: Texture;
-  mars: Texture;
-  jupiter: Texture;
-  ring: Texture;
-};
+function starUniforms() {
+  return {
+    uStarA: { value: new Vector3() },
+    uStarB: { value: new Vector3() },
+    uColorA: { value: STAR_A },
+    uColorB: { value: STAR_B },
+  };
+}
 
 function PlanetBody({
   piece,
   index,
   quality,
-  maps,
   reduced,
   selected,
   onSelect,
@@ -409,24 +514,47 @@ function PlanetBody({
   piece: Piece;
   index: number;
   quality: Quality;
-  maps: SurfaceMaps;
   reduced: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
 }) {
   const kind = kindFor(piece.id, index);
+  const surfaceName = surfaceFor(piece.id, index);
   const radius = bodyRadius(kind);
   const group = useRef<Group>(null);
   const spin = useRef<Group>(null);
   const { camera, gl } = useThree();
   const surface = useMemo(() => {
-    if (kind === "ocean") return surfaceMaterial(maps.earth, maps.normal, maps.spec, maps.clouds);
-    if (kind === "rocky") return surfaceMaterial(maps.mars, null, null, null);
-    return surfaceMaterial(maps.jupiter, null, null, null);
-  }, [kind, maps]);
+    if (surfaceName === "lava") {
+      return new ShaderMaterial({
+        vertexShader: RELIEF_VERT,
+        fragmentShader: LAVA_FRAG,
+        uniforms: { ...starUniforms(), uDisplace: { value: 0.06 } },
+      });
+    }
+    if (surfaceName === "ice-giant") {
+      return new ShaderMaterial({
+        vertexShader: RELIEF_VERT,
+        fragmentShader: ICE_FRAG,
+        uniforms: { ...starUniforms(), uTime: { value: 0 }, uDisplace: { value: 0.018 } },
+      });
+    }
+    return new ShaderMaterial({
+      vertexShader: RELIEF_VERT,
+      fragmentShader: EYE_FRAG,
+      uniforms: {
+        ...starUniforms(),
+        uPlanet: { value: new Vector3() },
+        uCamera: { value: new Vector3() },
+        uTime: { value: 0 },
+        uDisplace: { value: 0.04 },
+      },
+    });
+  }, [surfaceName]);
   const air = useMemo(() => {
-    const tint = kind === "ocean" ? new Color("#9ecfff") : kind === "rocky" ? new Color("#c48962") : new Color("#e6c49a");
-    const gain = kind === "ocean" ? 0.5 : kind === "rocky" ? 0.2 : 0.28;
+    const tint =
+      surfaceName === "eyeball" ? new Color("#c5e9f6") : surfaceName === "lava" ? new Color("#c4623a") : new Color("#b7efe4");
+    const gain = surfaceName === "eyeball" ? 0.46 : surfaceName === "lava" ? 0.14 : 0.34;
     return new ShaderMaterial({
       vertexShader: AIR_VERT,
       fragmentShader: AIR_FRAG,
@@ -436,13 +564,11 @@ function PlanetBody({
       side: BackSide,
       uniforms: { uTint: { value: tint }, uGain: { value: gain }, uCamera: { value: new Vector3() } },
     });
-  }, [kind]);
+  }, [surfaceName]);
   const rings = useMemo(() => {
-    if (kind !== "giant") return null;
-    const inner = radius * 1.32;
+    if (surfaceName !== "ice-giant") return null;
+    const inner = radius * 1.18;
     const outer = visualRadius(kind) * 0.98;
-    maps.ring.wrapS = ClampToEdgeWrapping;
-    maps.ring.wrapT = ClampToEdgeWrapping;
     return new ShaderMaterial({
       vertexShader: RING_VERT,
       fragmentShader: RING_FRAG,
@@ -450,24 +576,23 @@ function PlanetBody({
       depthWrite: false,
       side: DoubleSide,
       uniforms: {
-        uStarA: { value: new Vector3() },
-        uStarB: { value: new Vector3() },
-        uColorA: { value: STAR_A },
-        uColorB: { value: STAR_B },
+        ...starUniforms(),
         uPlanet: { value: new Vector3() },
         uInner: { value: inner },
         uOuter: { value: outer },
         uBody: { value: radius },
-        uRing: { value: maps.ring },
       },
     });
-  }, [kind, maps.ring]);
+  }, [surfaceName, kind, radius]);
 
   useFrame((_, delta) => {
     const position = planetPosition(piece.id, index, sim.time);
     group.current?.position.set(position.x, position.y, position.z);
-    if (!reduced && spin.current) spin.current.rotation.y += delta * (kind === "giant" ? 0.08 : 0.12);
+    if (!reduced && spin.current && surfaceName !== "eyeball") {
+      spin.current.rotation.y += delta * (surfaceName === "ice-giant" ? 0.045 : 0.07);
+    }
     pushStars(surface, camera.position);
+    if (surface.uniforms.uPlanet) surface.uniforms.uPlanet.value.set(position.x, position.y, position.z);
     air.uniforms.uCamera.value.copy(camera.position);
     if (rings) {
       pushStars(rings, camera.position);
@@ -487,8 +612,8 @@ function PlanetBody({
         <mesh geometry={sphere} material={air} scale={radius * 1.02} />
       </group>
       {rings ? (
-        <mesh material={rings} rotation={[0.58, 0.22, 0.08]}>
-          <ringGeometry args={[radius * 1.32, visualRadius(kind) * 0.98, Math.max(quality.ringSegments, 128), 64]} />
+        <mesh material={rings} rotation={[0.42, 0.18, 0.28]}>
+          <ringGeometry args={[radius * 1.18, visualRadius(kind) * 0.98, Math.max(quality.ringSegments, 128), 72]} />
         </mesh>
       ) : null}
       <mesh
@@ -537,6 +662,89 @@ function LabelAnchor({ id, hidden, lift }: { id: string; hidden: boolean; lift: 
   return <group ref={anchor} position={[0, lift, 0]} />;
 }
 
+function rockGeometry(seed: number, detail: number) {
+  const geo = new IcosahedronGeometry(1, detail);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    let n = Math.imul(Math.round((x + 3) * 19 + (y + 3) * 29 + (z + 3) * 7) + seed * 13, 747796405);
+    n = Math.imul(n ^ (n >>> 13), 2246822519);
+    const unit = ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+    const stretch = 0.62 + unit * 0.85;
+    pos.setXYZ(i, x * stretch, y * (0.7 + unit * 0.5), z * stretch);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function Belt({ count, pieces, selectedId }: { count: number; pieces: Piece[]; selectedId: string | null }) {
+  const rocks = useMemo(() => beltRocks(count), [count]);
+  const geometries = useMemo(() => [rockGeometry(3, 2), rockGeometry(17, 2), rockGeometry(41, 2)], []);
+  const material = useMemo(
+    () =>
+      new ShaderMaterial({
+        vertexShader: ROCK_VERT,
+        fragmentShader: ROCK_FRAG,
+        uniforms: {
+          uStarA: { value: new Vector3() },
+          uStarB: { value: new Vector3() },
+          uColorA: { value: STAR_A },
+          uColorB: { value: STAR_B },
+          uCamera: { value: new Vector3() },
+          uFocus: { value: new Vector3() },
+          uHasFocus: { value: 0 },
+          uFocusRadius: { value: 1 },
+        },
+      }),
+    [],
+  );
+  const meshes = useMemo(() => {
+    const dummy = new Object3D();
+    const color = new Color();
+    return [0, 1, 2].map((shape) => {
+      const batch = rocks.filter((rock: Rock) => rock.shape === shape);
+      const mesh = new InstancedMesh(geometries[shape], material, Math.max(batch.length, 1));
+      mesh.count = batch.length;
+      mesh.frustumCulled = false;
+      batch.forEach((rock, index) => {
+        dummy.position.set(rock.x, rock.y, rock.z);
+        dummy.rotation.set(rock.rx, rock.ry, rock.rz);
+        dummy.scale.setScalar(rock.scale);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(index, dummy.matrix);
+        color.setHSL(0.06 + rock.shade * 0.05, 0.22 + rock.shade * 0.15, 0.16 + rock.shade * 0.24);
+        mesh.setColorAt(index, color);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.raycast = () => {};
+      return mesh;
+    });
+  }, [rocks, geometries, material]);
+  useFrame(({ camera }) => {
+    pushStars(material, camera.position);
+    material.uniforms.uCamera.value.copy(camera.position);
+    if (!selectedId) {
+      material.uniforms.uHasFocus.value = 0;
+      return;
+    }
+    const index = pieces.findIndex((piece) => piece.id === selectedId);
+    const at = planetPosition(selectedId, Math.max(index, 0), sim.time);
+    material.uniforms.uFocus.value.set(at.x, at.y, at.z);
+    material.uniforms.uHasFocus.value = 1;
+    material.uniforms.uFocusRadius.value = visualRadius(kindFor(selectedId, Math.max(index, 0)));
+  });
+  return (
+    <group>
+      {meshes.map((mesh, index) => (
+        <primitive key={index} object={mesh} />
+      ))}
+    </group>
+  );
+}
+
 export function Universe({
   pieces,
   quality,
@@ -553,28 +761,7 @@ export function Universe({
   onSelect: (id: string) => void;
 }) {
   const elapsed = useRef(0);
-  const loaded = useLoader(TextureLoader, [
-    earthDayUrl,
-    earthCloudsUrl,
-    earthNormalUrl,
-    earthSpecUrl,
-    marsUrl,
-    jupiterUrl,
-    sunUrl,
-    ringUrl,
-  ]);
-  const maps = useMemo(() => {
-    const [earth, clouds, normal, spec, mars, jupiter, sun, ring] = loaded;
-    prepareTexture(earth, true);
-    prepareTexture(clouds, true);
-    prepareTexture(normal, false);
-    prepareTexture(spec, false);
-    prepareTexture(mars, true);
-    prepareTexture(jupiter, true);
-    prepareTexture(sun, true);
-    prepareTexture(ring, true);
-    return { earth, clouds, normal, spec, mars, jupiter, sun, ring, glow: softGlowTexture() };
-  }, [loaded]);
+  const glow = useMemo(() => softGlowTexture(), []);
   useFrame((_, delta) => {
     if (!reduced) elapsed.current += delta;
     sim.time = reduced ? 0 : elapsed.current;
@@ -586,7 +773,8 @@ export function Universe({
       <Starfield count={quality.stars} />
       <Clusters />
       <Galaxies count={quality.galaxies} />
-      <Stars sun={maps.sun} glow={maps.glow} />
+      <Stars glow={glow} />
+      <Belt count={quality.rocks} pieces={pieces} selectedId={selectedId} />
       {pieces.map((piece, index) => (
         <OrbitLine key={`${piece.id}-orbit`} id={piece.id} index={index} segments={quality.ringSegments} />
       ))}
@@ -596,7 +784,6 @@ export function Universe({
           piece={piece}
           index={index}
           quality={quality}
-          maps={maps}
           reduced={reduced}
           selected={piece.id === selectedId}
           onSelect={onSelect}

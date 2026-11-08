@@ -16,6 +16,7 @@ import {
   starPosition,
   starRadius,
   sunlitAmount,
+  surfaceFor,
   visualRadius,
 } from "./system";
 import { homeCamera as overviewCamera } from "./framing";
@@ -48,6 +49,7 @@ describe("orbits", () => {
   it("puts the three projects on separate circumbinary orbits that never overlap", () => {
     expect(ids).toEqual(["smart-blinds", "fontloop", "avatars"]);
     expect(ids.map((id, index) => kindFor(id, index))).toEqual(["ocean", "rocky", "giant"]);
+    expect(ids.map((id, index) => surfaceFor(id, index))).toEqual(["eyeball", "lava", "ice-giant"]);
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
         const gap = Math.abs(orbitFor(ids[i], i).radius - orbitFor(ids[j], j).radius);
@@ -194,6 +196,8 @@ describe("adaptive quality", () => {
     expect(phone.stars).toBeGreaterThan(400);
     expect(phone.galaxies).toBeGreaterThan(0);
     expect(phone.clusters).toBeGreaterThan(0);
+    expect(phone.rocks).toBeGreaterThan(200);
+    expect(desk.rocks).toBeGreaterThan(phone.rocks);
     expect(desk.octaves).toBeGreaterThanOrEqual(phone.octaves);
   });
 });

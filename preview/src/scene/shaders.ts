@@ -238,17 +238,21 @@ uniform vec3 uPlanet;
 uniform float uInner;
 uniform float uOuter;
 uniform float uBody;
-uniform sampler2D uRing;
 ${NOISE}
 void main() {
   float radial = clamp((vRadius - uInner) / max(uOuter - uInner, 0.001), 0.0, 1.0);
-  vec4 tex = texture2D(uRing, vec2(radial, 0.5));
-  if (tex.a < 0.08) discard;
+  float grain = fbm(vec3(radial * 46.0, vWorld.x * 0.15, 2.0));
+  float gap = smoothstep(0.018, 0.0, abs(radial - 0.36));
+  gap = max(gap, smoothstep(0.012, 0.0, abs(radial - 0.71)));
+  float dust = smoothstep(0.02, 0.08, radial) * smoothstep(0.98, 0.9, radial);
+  dust *= 1.0 - gap;
+  if (dust < 0.08) discard;
   vec3 n = normalize(vNormal);
   if (!gl_FrontFacing) n = -n;
   vec3 light = starLight(n, vWorld, uStarA, uStarB, uColorA, uColorB);
-  vec3 albedo = tex.rgb * vec3(4.4, 3.7, 3.0);
-  vec3 color = albedo * (0.62 + light);
+  vec3 albedo = mix(vec3(0.55, 0.72, 0.74), vec3(0.32, 0.28, 0.24), grain);
+  albedo = mix(albedo, vec3(0.72, 0.7, 0.62), smoothstep(0.62, 0.8, grain) * 0.35);
+  vec3 color = albedo * dust * (0.55 + light);
   vec3 toSun = normalize(uStarA - uPlanet);
   vec3 rel = vWorld - uPlanet;
   float along = dot(rel, toSun);
@@ -256,7 +260,7 @@ void main() {
     float occ = 1.0 - smoothstep(uBody * 0.92, uBody * 1.2, length(rel - toSun * along));
     color *= 1.0 - occ * 0.78;
   }
-  gl_FragColor = vec4(color, tex.a * 0.94);
+  gl_FragColor = vec4(color, 0.55 + grain * 0.35);
 }
 `;
 
@@ -277,32 +281,39 @@ export const STAR_FRAG = /* glsl */ `
 varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec3 vObj;
-varying vec2 vUv;
 uniform vec3 uColor;
 uniform vec3 uCamera;
+uniform vec3 uFlareDir;
 uniform float uTime;
 uniform float uSeed;
-uniform sampler2D uMap;
+uniform float uFlareAmt;
+uniform float uRadiance;
 ${NOISE}
 void main() {
   vec3 n = normalize(vNormal);
   vec3 view = normalize(uCamera - vWorld);
-  // Stay off the source map's smeared poles, then cover the sphere's own pinch with granulation.
-  float pole = smoothstep(0.55, 0.88, abs(vUv.y - 0.5) * 2.0);
-  vec2 sampleUv = vec2(vUv.x + uSeed * 0.17, mix(0.22, 0.78, vUv.y));
-  vec3 photo = texture2D(uMap, sampleUv).rgb;
-  float cells = fbm(vObj * 7.5 + vec3(uSeed, uTime * 0.01, 0.0));
-  float fine = fbm(vObj * 16.0 + vec3(4.0, uSeed, 1.0));
-  vec3 grain = vec3(1.0, 0.62, 0.28) * (0.72 + cells * 0.22 + fine * 0.16);
-  photo = mix(photo, grain, pole);
-  float hot = smoothstep(0.8, 0.98, max(photo.r, max(photo.g, photo.b)));
-  photo = mix(photo, vec3(1.0, 0.68, 0.32), hot * 0.35);
-  vec3 col = photo * uColor * (0.92 + cells * 0.1);
-  float spotA = smoothstep(0.22, 0.05, length(normalize(vObj) - normalize(vec3(0.35, 0.42, 0.84))));
-  float spotB = smoothstep(0.14, 0.03, length(normalize(vObj) - normalize(vec3(-0.55, 0.2 + uSeed * 0.05, 0.75))));
-  col = mix(col, col * vec3(0.38, 0.24, 0.14), clamp(spotA + spotB * 0.7, 0.0, 1.0) * 0.85);
+  vec3 p = normalize(vObj);
+  vec3 flow = vec3(
+    fbm(p * 1.7 + vec3(uTime * 0.033, uSeed, 0.4)),
+    fbm(p * 1.7 + vec3(2.2, uTime * 0.027, uSeed)),
+    fbm(p * 1.9 + vec3(uSeed * 0.5, 3.1, -uTime * 0.024))
+  );
+  vec3 q = p + (flow - 0.5) * 0.62;
+  float gran = fbm(q * 8.0 + vec3(uTime * 0.045, uSeed, 0.0));
+  float fine = fbm(q * 20.0 + vec3(1.4, uTime * 0.07, uSeed));
+  float large = fbm(q * 3.1 + vec3(uTime * 0.011, 2.0, uSeed));
+  float spot = smoothstep(0.64, 0.8, fbm(q * 1.8 + vec3(uSeed * 2.0, 1.0, 0.0)));
+  vec3 cool = vec3(0.62, 0.12, 0.02);
+  vec3 mid = vec3(1.0, 0.48, 0.12);
+  vec3 hot = vec3(1.0, 0.9, 0.62);
+  vec3 col = mix(cool, mid, smoothstep(0.32, 0.66, gran));
+  col = mix(col, hot, smoothstep(0.5, 0.84, fine) * 0.62);
+  col = mix(col, col * 0.72 + hot * 0.4, smoothstep(0.45, 0.75, large) * 0.4);
+  col = mix(col, col * vec3(0.32, 0.16, 0.07), spot * 0.62);
+  float foot = 1.0 - smoothstep(0.0, 0.42, length(p - normalize(uFlareDir)));
+  col += vec3(1.0, 0.96, 0.75) * foot * uFlareAmt * 1.15;
   float limb = pow(clamp(dot(n, view), 0.0, 1.0), 0.42);
-  col *= 0.34 + 0.66 * limb;
+  col *= uColor * uRadiance * (0.3 + 0.7 * limb);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -312,13 +323,248 @@ varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec3 vObj;
 varying vec2 vUv;
+uniform float uTime;
+uniform float uSeed;
+${NOISE}
 void main() {
   vUv = uv;
-  vObj = position;
+  vec3 p = position;
+  float swell = fbm(p * 2.4 + vec3(uSeed, uTime * 0.05, 0.2));
+  p += normal * (swell - 0.5) * 0.02;
+  vObj = p;
+  vec4 world = modelMatrix * vec4(p, 1.0);
+  vWorld = world.xyz;
+  vNormal = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+export const PROMINENCE_VERT = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vUv = uv;
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorld = world.xyz;
   vNormal = normalize(mat3(modelMatrix) * normal);
   gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+export const PROMINENCE_FRAG = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vWorld;
+uniform vec3 uCamera;
+uniform vec3 uCenter;
+uniform vec3 uColor;
+uniform float uAmt;
+uniform float uRadius;
+${NOISE}
+void main() {
+  vec3 fromStar = vWorld - uCenter;
+  vec3 view = normalize(uCamera - uCenter);
+  float side = length(fromStar - view * dot(fromStar, view));
+  float limb = smoothstep(uRadius * 0.62, uRadius * 1.08, side);
+  float along = vUv.x;
+  float ends = smoothstep(0.0, 0.07, along) * smoothstep(1.0, 0.9, along);
+  float turb = 0.65 + 0.35 * fbm(vec3(vUv * vec2(6.0, 3.0), uAmt * 3.0));
+  float alpha = ends * turb * uAmt * (0.72 + 0.55 * limb);
+  if (alpha < 0.03) discard;
+  vec3 col = mix(uColor * vec3(1.0, 0.45, 0.12), vec3(1.0, 0.92, 0.62), turb);
+  col *= 0.75 + limb * 0.5;
+  gl_FragColor = vec4(col, alpha * (0.55 + turb * 0.45));
+}
+`;
+
+export const RELIEF_VERT = /* glsl */ `
+varying vec3 vObj;
+varying vec3 vWorld;
+varying vec3 vNormal;
+uniform float uDisplace;
+${NOISE}
+void main() {
+  vec3 p = position;
+  float h = fbm(p * 3.3);
+  float fine = fbm(p * 8.0);
+  p += normal * ((h - 0.48) * uDisplace + (fine - 0.5) * uDisplace * 0.28);
+  vec4 world = modelMatrix * vec4(p, 1.0);
+  vObj = position;
+  vWorld = world.xyz;
+  vNormal = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+export const LAVA_FRAG = /* glsl */ `
+varying vec3 vObj;
+varying vec3 vWorld;
+varying vec3 vNormal;
+uniform vec3 uStarA;
+uniform vec3 uStarB;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+${NOISE}
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 p = normalize(vObj);
+  float n1 = fbm(p * 2.7);
+  float n2 = fbm(p * 6.8 + 4.0);
+  float n3 = fbm(p * 15.0 + 1.5);
+  float rock = fbm(p * 10.0);
+  float veins = smoothstep(0.045, 0.0, abs(n1 - 0.5));
+  veins = max(veins, smoothstep(0.028, 0.0, abs(n2 - 0.48)) * 0.8);
+  veins = max(veins, smoothstep(0.016, 0.0, abs(n3 - 0.52)) * 0.45);
+  vec3 crust = vec3(0.012, 0.011, 0.012) * (0.55 + rock * 0.9);
+  crust = mix(crust, vec3(0.05, 0.03, 0.025), smoothstep(0.6, 0.85, rock) * 0.4);
+  vec3 magma = mix(vec3(0.55, 0.05, 0.01), vec3(1.0, 0.62, 0.18), smoothstep(0.2, 0.85, veins));
+  vec3 light = starLight(n, vWorld, uStarA, uStarB, uColorA, uColorB);
+  vec3 color = crust * light + magma * veins * (0.42 + light * 0.35);
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+export const ICE_FRAG = /* glsl */ `
+varying vec3 vObj;
+varying vec3 vWorld;
+varying vec3 vNormal;
+uniform vec3 uStarA;
+uniform vec3 uStarB;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+uniform float uTime;
+${NOISE}
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 p = normalize(vObj);
+  float y = p.y;
+  float drift = fbm(p * 1.6 + vec3(uTime * 0.012, 0.4, 0.2));
+  float lat = y * 0.85 + (drift - 0.5) * 0.55;
+  float band = fbm(vec3(lat * 5.5, p.x * 1.4, p.z * 1.1));
+  float streak = fbm(vec3(lat * 11.0, p.x * 0.6 + uTime * 0.01, p.z * 0.6));
+  float fine = fbm(p * 9.0 + vec3(0.0, uTime * 0.015, 1.0));
+  vec3 deep = vec3(0.07, 0.28, 0.34);
+  vec3 pale = vec3(0.62, 0.9, 0.88);
+  vec3 cream = vec3(0.8, 0.88, 0.8);
+  vec3 albedo = mix(deep, pale, smoothstep(0.32, 0.74, band));
+  albedo = mix(albedo, cream, smoothstep(0.58, 0.86, fine) * 0.28);
+  albedo = mix(albedo, deep * 0.75, smoothstep(0.62, 0.84, streak) * 0.22);
+  vec3 stormP = p - normalize(vec3(0.62, 0.18, 0.42));
+  float storm = smoothstep(0.62, 0.08, length(stormP));
+  float arm = sin(atan(stormP.z, stormP.x) * 3.0 - length(stormP) * 16.0);
+  albedo = mix(albedo, vec3(0.03, 0.1, 0.14), storm * (0.65 + 0.35 * smoothstep(0.0, 1.0, arm)));
+  vec3 storm2 = p - normalize(vec3(-0.4, -0.35, 0.55));
+  albedo = mix(albedo, vec3(0.08, 0.2, 0.26), smoothstep(0.42, 0.08, length(storm2)) * 0.7);
+  vec3 light = starLight(n, vWorld, uStarA, uStarB, uColorA, uColorB);
+  gl_FragColor = vec4(albedo * light, 1.0);
+}
+`;
+
+export const EYE_FRAG = /* glsl */ `
+varying vec3 vObj;
+varying vec3 vWorld;
+varying vec3 vNormal;
+uniform vec3 uStarA;
+uniform vec3 uStarB;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+uniform vec3 uPlanet;
+uniform vec3 uCamera;
+uniform float uTime;
+${NOISE}
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 p = normalize(vObj);
+  vec3 bary = (uStarA + uStarB) * 0.5;
+  vec3 sub = normalize(bary - uPlanet);
+  float heat = dot(n, sub);
+  float warp = fbm(p * 2.6) - 0.5;
+  float field = heat + warp * 0.7 + (fbm(p * 6.5) - 0.5) * 0.28;
+  float ocean = smoothstep(0.28, 0.72, field);
+  float shore = smoothstep(0.05, 0.35, ocean) * smoothstep(0.92, 0.4, ocean);
+  float cracks = smoothstep(0.028, 0.0, abs(fbm(p * 4.2) - 0.5));
+  cracks = max(cracks, smoothstep(0.018, 0.0, abs(fbm(p * 9.0 + 2.0) - 0.47)) * 0.75);
+  float pack = fbm(p * 3.4);
+  vec3 ice = mix(vec3(0.78, 0.88, 0.93), vec3(0.5, 0.68, 0.76), pack);
+  ice = mix(ice, vec3(0.18, 0.28, 0.34), cracks * (1.0 - ocean * 0.85));
+  vec3 water = vec3(0.015, 0.04, 0.07);
+  vec3 slush = vec3(0.55, 0.7, 0.74);
+  vec3 albedo = mix(ice, water, ocean);
+  albedo = mix(albedo, slush, shore * 0.8);
+  float cloud = smoothstep(0.52, 0.74, fbm(p * 2.4 + vec3(uTime * 0.012, 0.4, 0.0)));
+  cloud *= 0.35 + 0.65 * (1.0 - ocean);
+  vec3 light = starLight(n, vWorld, uStarA, uStarB, uColorA, uColorB);
+  vec3 view = normalize(uCamera - vWorld);
+  vec3 spec = vec3(0.0);
+  vec3 stars[2];
+  stars[0] = uStarA;
+  stars[1] = uStarB;
+  vec3 cols[2];
+  cols[0] = uColorA;
+  cols[1] = uColorB;
+  for (int i = 0; i < 2; i++) {
+    vec3 L = normalize(stars[i] - vWorld);
+    vec3 H = normalize(L + view);
+    spec += cols[i] * pow(clamp(dot(n, H), 0.0, 1.0), 90.0);
+  }
+  vec3 color = albedo * light + spec * ocean * 0.1;
+  color = mix(color, vec3(0.9, 0.95, 0.97) * light, cloud * 0.55);
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+export const ROCK_VERT = /* glsl */ `
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying vec3 vColor;
+uniform vec3 uCamera;
+uniform vec3 uFocus;
+uniform float uHasFocus;
+uniform float uFocusRadius;
+float clearance(vec3 world) {
+  float dist = distance(world, uCamera);
+  float fade = smoothstep(0.45, 1.75, dist);
+  if (uHasFocus > 0.5) {
+    vec3 toP = uFocus - uCamera;
+    float plen2 = dot(toP, toP);
+    float along = plen2 > 0.001 ? dot(world - uCamera, toP) / plen2 : 0.0;
+    if (along > 0.02 && along < 0.98) {
+      float lateral = distance(world, uCamera + toP * along);
+      fade *= smoothstep(0.25, 1.45, lateral);
+    }
+    fade *= smoothstep(0.15, 1.35, distance(world, uFocus) - uFocusRadius);
+  }
+  return fade;
+}
+void main() {
+  vColor = instanceColor;
+  vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  float fade = clearance(world.xyz);
+  vec3 scaled = position * fade;
+  world = modelMatrix * instanceMatrix * vec4(scaled, 1.0);
+  vWorld = world.xyz;
+  vNormal = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+export const ROCK_FRAG = /* glsl */ `
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying vec3 vColor;
+uniform vec3 uStarA;
+uniform vec3 uStarB;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+${NOISE}
+void main() {
+  vec3 n = normalize(vNormal);
+  float grit = fbm(vWorld * 3.4);
+  float chip = fbm(vWorld * 9.0);
+  vec3 albedo = vColor * (0.7 + grit * 0.85);
+  albedo = mix(albedo, albedo * vec3(1.15, 1.05, 0.9), chip * 0.35);
+  vec3 light = starLight(n, vWorld, uStarA, uStarB, uColorA, uColorB) + vec3(0.14, 0.12, 0.1);
+  gl_FragColor = vec4(albedo * light, 1.0);
 }
 `;
 
