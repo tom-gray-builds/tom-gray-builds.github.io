@@ -249,6 +249,6 @@ regenerates the JSON-LD from the same source as the sheet.
 python3 -m http.server 4173
 ```
 
-## Universe preview (not the live site)
+## Universe
 
-`preview/` is an unreleased 3D redesign. GitHub Pages still serves this repository root — `index.html`, `privacy.html`, and `CNAME` — and that is unchanged. The preview reads `projects.json`, builds to a gitignored static folder, and is documented in `preview/README.md`, including the deployment steps that have deliberately not been taken.
+The live page is the 3D system built from `preview/`. GitHub Pages still publishes this repository root, and `CNAME` is still `tomgray.co.uk`. `privacy.html` stays at `/privacy`. The previous flash sheet is the commit tagged `production-before-universe` (`c5827b0`). Rebuild with `npm run build` inside `preview/`, then copy `dist/index.html` and `dist/assets` here (leave out the sourcemap). The separate Worker described in `preview/README.md` remains its own copy.

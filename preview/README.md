@@ -1,8 +1,8 @@
 # Universe preview
 
-An unreleased redesign of [tomgray.co.uk](https://tomgray.co.uk). The whole viewport is a small 3D system: each project from `projects.json` is one planet. This folder does not replace the live site.
+The 3D system for [tomgray.co.uk](https://tomgray.co.uk). Each project from `projects.json` is one planet. GitHub Pages serves a copy of this build from the repository root. `CNAME` is unchanged, and `privacy.html` stays at `/privacy`. The flash sheet that was live before this is the tag `production-before-universe`.
 
-The site that GitHub Pages serves is still the repository root (`index.html`, `privacy.html`, `CNAME`). A separate Workers hostname, listed below, serves this preview only.
+A separate Workers hostname, listed below, serves the same preview on its own. Publishing the Worker does not publish the domain, and publishing the domain does not remove the Worker.
 
 ## Run it
 
