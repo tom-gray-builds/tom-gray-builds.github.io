@@ -2,7 +2,7 @@
 
 An unreleased redesign of [tomgray.co.uk](https://tomgray.co.uk). The whole viewport is a small 3D system: each project from `projects.json` is one planet. This folder does not replace the live site.
 
-The site that GitHub Pages serves is still the repository root (`index.html`, `privacy.html`, `CNAME`). Nothing here is deployed.
+The site that GitHub Pages serves is still the repository root (`index.html`, `privacy.html`, `CNAME`). A separate Workers hostname, listed below, serves this preview only.
 
 ## Run it
 
@@ -35,6 +35,14 @@ Drag orbits. Scroll or pinch zooms, inside a hard near and far limit. Click or t
 On a phone the scene is the same one. Quality drops (pixel ratio, segment counts, star count, environment resolution) when the pointer is coarse, the device is small, or there are few cores. It does not fall back to a list. A list is only rendered when WebGL cannot start, or JavaScript is off.
 
 Reduced motion snaps the camera and stops the slow spins.
+
+## Public preview host
+
+A copy of this build is published as its own Worker, `tom-gray-universe-preview`, at:
+
+https://tom-gray-universe-preview.tomgray.workers.dev
+
+That hostname is not `tomgray.co.uk`. It does not change GitHub Pages, `CNAME`, or DNS. Deleting that Worker removes the preview and leaves the live site alone. `npx wrangler deploy` from this folder publishes `dist/` again; it does not deploy the repository root.
 
 ## Deployment steps that were not taken
 
