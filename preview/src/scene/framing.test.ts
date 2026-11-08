@@ -15,9 +15,12 @@ import {
   planetPosition,
   starPosition,
   starRadius,
+  sunlitAmount,
   visualRadius,
 } from "./system";
+import { homeCamera as overviewCamera } from "./framing";
 import { pieces } from "../data/content";
+import { CLUSTERS, clusterStarSize } from "./clusters";
 import { pointerExceededDrag } from "./pointer";
 import { qualityFrom } from "./quality";
 
@@ -58,11 +61,27 @@ describe("orbits", () => {
   });
 });
 
+describe("first view lighting", () => {
+  it("shows a sunlit face with a terminator for every planet, including after they have moved", () => {
+    for (const time of [0, 18, 55, 96]) {
+      for (const viewport of viewports) {
+        const camera = overviewCamera(viewport.width, viewport.height, time);
+        pieces.forEach((piece, index) => {
+          const position = planetPosition(piece.id, index, time);
+          const lit = sunlitAmount(position, camera.eye);
+          expect(lit, `${piece.id} ${viewport.name} t=${time}`).toBeGreaterThan(0.34);
+          expect(lit, `${piece.id} not fully noon`).toBeLessThan(0.96);
+        });
+      }
+    }
+  });
+});
+
 describe("overview framing", () => {
   it("fits both stars and every planet, including rings, on desktop and phone", () => {
     for (const viewport of viewports) {
       for (const time of [0, 30, 90]) {
-        const camera = homeCamera(viewport.width, viewport.height);
+        const camera = homeCamera(viewport.width, viewport.height, time);
         const viewportRect = { x: 0, y: 0, w: viewport.width, h: viewport.height };
         const bodies = [
           { id: "primary", position: starPosition("primary", time), radius: starRadius("primary") * 2.1 },
@@ -106,6 +125,53 @@ describe("focus framing", () => {
         }
       }
     }
+  });
+});
+
+describe("globular clusters", () => {
+  it("sits in the opening sky on every viewport, clear of the planets", () => {
+    for (const viewport of viewports) {
+      const camera = homeCamera(viewport.width, viewport.height, 0);
+      const frame = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+      for (const cluster of CLUSTERS) {
+        const disk = projectSphere(
+          cluster,
+          cluster.scale,
+          camera.eye,
+          camera.look,
+          viewport.width,
+          viewport.height,
+        );
+        expect(disk, `cluster on ${viewport.name}`).not.toBeNull();
+        if (!disk) continue;
+        expect(diskInside(disk, frame, 6), `cluster leaves ${viewport.name}`).toBe(true);
+        pieces.forEach((piece, index) => {
+          const planet = projectSphere(
+            planetPosition(piece.id, index, 0),
+            visualRadius(kindFor(piece.id, index)),
+            camera.eye,
+            camera.look,
+            viewport.width,
+            viewport.height,
+          );
+          expect(planet).not.toBeNull();
+          if (!planet) return;
+          const gap = Math.hypot(disk.cx - planet.cx, disk.cy - planet.cy);
+          expect(gap, `${piece.id} overlaps a cluster on ${viewport.name}`).toBeGreaterThan(disk.r + planet.r + 6);
+        });
+      }
+    }
+  });
+
+  it("keeps every star a soft point instead of a pixel block, including up close", () => {
+    for (const distance of [28, 48, 90, 180, 340]) {
+      for (const luminosity of [0.28, 1, 1.8]) {
+        const size = clusterStarSize(luminosity, distance);
+        expect(size).toBeLessThanOrEqual(2.45);
+        expect(size).toBeGreaterThanOrEqual(0.7);
+      }
+    }
+    expect(clusterStarSize(1, 200)).toBeGreaterThan(1.2);
   });
 });
 

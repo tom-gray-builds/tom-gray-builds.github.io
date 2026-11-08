@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Canvas } from "@react-three/fiber";
 import { ACESFilmicToneMapping } from "three";
 import { pieces } from "./data/content";
@@ -178,6 +178,7 @@ export function App() {
       </div>
       <div className="stage">
         <SceneBoundary onError={() => setFailed(true)}>
+          <Suspense fallback={null}>
           <Canvas
             dpr={[1, quality.dprMax]}
             frameloop={reduced ? "demand" : "always"}
@@ -208,6 +209,7 @@ export function App() {
               onSelect={open}
             />
           </Canvas>
+          </Suspense>
         </SceneBoundary>
       </div>
       <Chrome onReset={reset} />

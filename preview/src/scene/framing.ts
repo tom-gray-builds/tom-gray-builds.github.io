@@ -11,6 +11,7 @@ import {
   sub,
   systemBound,
   visualRadius,
+  litOverviewTheta,
   planetPosition,
 } from "./system";
 import { pieces } from "../data/content";
@@ -98,10 +99,10 @@ export function sphericalOffset(radius: number, phi: number, theta: number): Vec
   };
 }
 
-export function homeCamera(width: number, height: number): CameraPose {
+export function homeCamera(width: number, height: number, time = 0): CameraPose {
   const dist = homeRadius(width / Math.max(height, 1));
-  const eye = sphericalOffset(dist, 1.02, 0.62);
-  return { eye, look: { x: 0, y: 0.15, z: 0 }, dist };
+  const eye = sphericalOffset(dist, 1.04, litOverviewTheta(time));
+  return { eye, look: { x: 0, y: 0.08, z: 0 }, dist };
 }
 
 export function focusDistance(visualR: number, width: number, height: number) {

@@ -1,3 +1,5 @@
+import { pieces } from "../data/content";
+
 export type PlanetKind = "ocean" | "rocky" | "giant";
 
 export type Vec3 = { x: number; y: number; z: number };
@@ -27,9 +29,11 @@ const ACCENT: Record<PlanetKind, string> = {
  * takes the next circumbinary ring from its sort index. See preview/README.md.
  */
 const BESPOKE_ORBITS: Record<string, Orbit> = {
-  "smart-blinds": { radius: 5.15, inclination: 0.16, node: 0.15, phase: 0.35, period: 118 },
-  fontloop: { radius: 7.55, inclination: -0.26, node: 1.05, phase: 2.15, period: 168 },
-  avatars: { radius: 10.7, inclination: 0.4, node: 2.35, phase: 3.9, period: 228 },
+  // Same period keeps the three on one sunward arc, so the opening view can
+  // see every lit face at once. Radii stay far enough apart not to touch.
+  "smart-blinds": { radius: 5.2, inclination: 0.14, node: 0.08, phase: 0.2, period: 150 },
+  fontloop: { radius: 7.65, inclination: -0.16, node: 0.22, phase: 0.72, period: 150 },
+  avatars: { radius: 10.65, inclination: 0.24, node: -0.06, phase: -0.28, period: 150 },
 };
 
 export const BINARY = {
@@ -159,6 +163,28 @@ export function normalize(a: Vec3): Vec3 {
 
 export function distance(a: Vec3, b: Vec3): number {
   return len(sub(a, b));
+}
+
+export function clusterAngle(time: number): number {
+  let x = 0;
+  let z = 0;
+  pieces.forEach((piece, index) => {
+    const position = planetPosition(piece.id, index, time);
+    x += position.x;
+    z += position.z;
+  });
+  return Math.atan2(x, z);
+}
+
+/** Camera azimuth that looks past the suns onto the planets' sunlit faces, with a terminator. */
+export function litOverviewTheta(time: number): number {
+  return clusterAngle(time) + Math.PI + 0.68;
+}
+
+export function sunlitAmount(planet: Vec3, eye: Vec3): number {
+  const toCamera = normalize(sub(eye, planet));
+  const toSun = normalize({ x: -planet.x, y: -planet.y, z: -planet.z });
+  return dot(toCamera, toSun);
 }
 
 export const sim = { time: 0 };

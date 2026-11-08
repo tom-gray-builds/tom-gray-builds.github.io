@@ -1,21 +1,36 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import {
   AdditiveBlending,
   BackSide,
   BufferAttribute,
   BufferGeometry,
+  CanvasTexture,
+  ClampToEdgeWrapping,
   Color,
   DoubleSide,
   Line as ThreeLine,
   LineBasicMaterial,
+  LinearFilter,
   MathUtils,
-  NormalBlending,
+  NoColorSpace,
+  RepeatWrapping,
   ShaderMaterial,
   SphereGeometry,
+  SRGBColorSpace,
+  TextureLoader,
   Vector3,
   type Group,
+  type Texture,
 } from "three";
+import earthDayUrl from "../assets/textures/earth-day.jpg";
+import earthCloudsUrl from "../assets/textures/earth-clouds.jpg";
+import earthNormalUrl from "../assets/textures/earth-normal.jpg";
+import earthSpecUrl from "../assets/textures/earth-spec.jpg";
+import marsUrl from "../assets/textures/mars.jpg";
+import jupiterUrl from "../assets/textures/jupiter.jpg";
+import sunUrl from "../assets/textures/sun.jpg";
+import ringUrl from "../assets/textures/saturn-ring.png";
 import type { Piece } from "../data/content";
 import {
   clamp,
@@ -25,20 +40,22 @@ import {
   shortestAngle,
   sphericalOffset,
 } from "./framing";
+import {
+  CLUSTERS,
+  clusterFragmentShader,
+  clusterVertexShader,
+  type Cluster,
+} from "./clusters";
 import type { Quality } from "./quality";
 import { pointerExceededDrag, pointerGate } from "./pointer";
 import {
   AIR_FRAG,
   AIR_VERT,
-  CLOUD_FRAG,
-  CORONA_FRAG,
   GALAXY_FRAG,
-  GIANT_FRAG,
-  OCEAN_FRAG,
-  PLANET_VERT,
+  MAP_FRAG,
+  MAP_VERT,
   RING_FRAG,
   RING_VERT,
-  ROCKY_FRAG,
   SKY_FRAG,
   SKY_VERT,
   STAR_FRAG,
@@ -48,6 +65,7 @@ import {
   BINARY,
   bodyRadius,
   kindFor,
+  litOverviewTheta,
   orbitFor,
   orbitPosition,
   planetPosition,
@@ -68,18 +86,55 @@ function clampPhi(phi: number) {
   return clamp(phi, 0.32, Math.PI - 0.32);
 }
 
-function makeLitMaterial(fragment: string, displace: number) {
+function prepareTexture(texture: Texture, color: boolean) {
+  texture.colorSpace = color ? SRGBColorSpace : NoColorSpace;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.anisotropy = 8;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function softGlowTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not draw the star glow");
+  const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  // Transparent across the disc itself. A thin falloff sits just outside the limb.
+  gradient.addColorStop(0, "rgba(255,220,160,0)");
+  gradient.addColorStop(0.56, "rgba(255,210,150,0)");
+  gradient.addColorStop(0.64, "rgba(255,196,120,0.55)");
+  gradient.addColorStop(0.78, "rgba(255,150,70,0.1)");
+  gradient.addColorStop(1, "rgba(255,140,60,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 256);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+function surfaceMaterial(map: Texture, normal: Texture | null, spec: Texture | null, clouds: Texture | null) {
   return new ShaderMaterial({
-    vertexShader: PLANET_VERT,
-    fragmentShader: fragment,
+    vertexShader: MAP_VERT,
+    fragmentShader: MAP_FRAG,
     uniforms: {
-      uDisplace: { value: displace },
       uStarA: { value: new Vector3() },
       uStarB: { value: new Vector3() },
       uColorA: { value: STAR_A },
       uColorB: { value: STAR_B },
       uCamera: { value: new Vector3() },
       uTime: { value: 0 },
+      uHasNormal: { value: normal ? 1 : 0 },
+      uHasSpec: { value: spec ? 1 : 0 },
+      uHasClouds: { value: clouds ? 1 : 0 },
+      uMap: { value: map },
+      uNormal: { value: normal ?? map },
+      uSpec: { value: spec ?? map },
+      uClouds: { value: clouds ?? map },
     },
   });
 }
@@ -147,7 +202,7 @@ function Starfield({ count }: { count: number }) {
           void main() {
             vColor = color;
             vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = size * (280.0 / -mv.z);
+            gl_PointSize = clamp(size * (110.0 / -mv.z), 0.6, 2.1);
             gl_Position = projectionMatrix * mv;
           }
         `,
@@ -167,59 +222,67 @@ function Starfield({ count }: { count: number }) {
   return <points geometry={geometry} material={material} />;
 }
 
-function Clusters({ count }: { count: number }) {
+function clusterStars(center: Cluster, per: number) {
+  const positions = new Float32Array(per * 3);
+  const colors = new Float32Array(per * 3);
+  const lums = new Float32Array(per);
+  let seed = Math.round(center.seed * 1000) + 17;
+  const rand = () => {
+    seed = (seed * 48271) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let i = 0; i < per; i++) {
+    const halo = rand() > 0.72;
+    const u = Math.max(rand(), 1e-4);
+    const radius = halo ? (0.28 + Math.pow(u, 0.55) * 0.72) * center.scale : Math.pow(u, 2.15) * center.scale * 0.62;
+    const theta = rand() * Math.PI * 2;
+    const phi = Math.acos(2 * rand() - 1);
+    const o = i * 3;
+    positions[o] = center.x + radius * Math.sin(phi) * Math.cos(theta);
+    positions[o + 1] = center.y + radius * Math.sin(phi) * Math.sin(theta) * 0.92;
+    positions[o + 2] = center.z + radius * Math.cos(phi);
+    const roll = rand();
+    const hue = roll > 0.94 ? [1, 0.62, 0.38] : roll > 0.84 ? [0.7, 0.8, 1] : [0.98, 0.95, 0.88];
+    colors[o] = hue[0];
+    colors[o + 1] = hue[1];
+    colors[o + 2] = hue[2];
+    lums[i] = halo ? 0.28 + Math.pow(rand(), 2.8) * 1.15 : 0.45 + Math.pow(rand(), 2.2) * 1.35;
+  }
+  return { positions, colors, lums };
+}
+
+function Clusters() {
   const geometry = useMemo(() => {
-    const centers = [
-      { x: 140, y: 90, z: -180 },
-      { x: -190, y: 40, z: -120 },
-      { x: 60, y: -80, z: -220 },
-      { x: -40, y: 130, z: 160 },
-    ].slice(0, count);
-    const per = 420;
-    const positions = new Float32Array(centers.length * per * 3);
-    const colors = new Float32Array(centers.length * per * 3);
-    let n = 0;
-    centers.forEach((center, index) => {
-      let seed = 90 + index * 13;
-      const rand = () => {
-        seed = (seed * 48271) % 2147483647;
-        return (seed - 1) / 2147483646;
-      };
-      for (let i = 0; i < per; i++) {
-        const r = Math.pow(rand(), 0.45) * 18;
-        const theta = rand() * Math.PI * 2;
-        const phi = Math.acos(2 * rand() - 1);
-        positions[n] = center.x + r * Math.sin(phi) * Math.cos(theta);
-        positions[n + 1] = center.y + r * Math.sin(phi) * Math.sin(theta) * 0.8;
-        positions[n + 2] = center.z + r * Math.cos(phi);
-        const bright = Math.pow(rand(), 2);
-        colors[n] = 0.9;
-        colors[n + 1] = 0.92;
-        colors[n + 2] = 1;
-        colors[n] *= 0.4 + bright;
-        colors[n + 1] *= 0.4 + bright;
-        colors[n + 2] *= 0.5 + bright;
-        n += 3;
-      }
+    const per = 4600;
+    const positions = new Float32Array(CLUSTERS.length * per * 3);
+    const colors = new Float32Array(CLUSTERS.length * per * 3);
+    const lums = new Float32Array(CLUSTERS.length * per);
+    CLUSTERS.forEach((center, index) => {
+      const stars = clusterStars(center, per);
+      positions.set(stars.positions, index * per * 3);
+      colors.set(stars.colors, index * per * 3);
+      lums.set(stars.lums, index * per);
     });
     const geo = new BufferGeometry();
     geo.setAttribute("position", new BufferAttribute(positions, 3));
     geo.setAttribute("color", new BufferAttribute(colors, 3));
+    geo.setAttribute("aLum", new BufferAttribute(lums, 1));
     return geo;
-  }, [count]);
-  return (
-    <points geometry={geometry}>
-      <pointsMaterial
-        size={3.1}
-        sizeAttenuation
-        vertexColors
-        transparent
-        depthWrite={false}
-        blending={AdditiveBlending}
-        opacity={0.95}
-      />
-    </points>
+  }, []);
+  const material = useMemo(
+    () =>
+      new ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        vertexColors: true,
+        uniforms: {},
+        vertexShader: clusterVertexShader(),
+        fragmentShader: clusterFragmentShader(),
+      }),
+    [],
   );
+  return <points geometry={geometry} material={material} />;
 }
 
 function Galaxies({ count }: { count: number }) {
@@ -269,79 +332,76 @@ function OrbitLine({ id, index, segments }: { id: string; index: number; segment
   return <primitive object={line} />;
 }
 
-function Stars() {
+function Stars({ sun, glow }: { sun: Texture; glow: Texture }) {
   const primary = useRef<Group>(null);
   const secondary = useRef<Group>(null);
-  const materials = useRef<ShaderMaterial[]>([]);
+  const materials = useMemo(() => {
+    const make = (color: Color, seed: number) =>
+      new ShaderMaterial({
+        vertexShader: STAR_VERT,
+        fragmentShader: STAR_FRAG,
+        uniforms: {
+          uColor: { value: color },
+          uCamera: { value: new Vector3() },
+          uTime: { value: 0 },
+          uSeed: { value: seed },
+          uMap: { value: sun },
+        },
+      });
+    return { primary: make(STAR_A, 0.2), secondary: make(STAR_B, 2.7) };
+  }, [sun]);
   useFrame(({ camera }) => {
     const a = starPosition("primary", sim.time);
     const b = starPosition("secondary", sim.time);
     primary.current?.position.set(a.x, a.y, a.z);
     secondary.current?.position.set(b.x, b.y, b.z);
-    materials.current.forEach((material) => {
-      if (material.uniforms.uCamera) material.uniforms.uCamera.value.copy(camera.position);
-      if (material.uniforms.uTime) material.uniforms.uTime.value = sim.time;
-    });
+    for (const material of [materials.primary, materials.secondary]) {
+      material.uniforms.uCamera.value.copy(camera.position);
+      material.uniforms.uTime.value = sim.time;
+    }
   });
-  const remember = (material: ShaderMaterial | null) => {
-    if (material && !materials.current.includes(material)) materials.current.push(material);
-  };
+  const star = (radius: number, material: ShaderMaterial, color: Color) => (
+    <>
+      <mesh>
+        <sphereGeometry args={[radius, 64, 48]} />
+        <primitive object={material} attach="material" />
+      </mesh>
+      <sprite scale={[radius * 3.3, radius * 3.3, 1]}>
+        <spriteMaterial
+          map={glow}
+          color={color}
+          transparent
+          depthWrite={false}
+          blending={AdditiveBlending}
+          opacity={0.7}
+          depthTest
+        />
+      </sprite>
+    </>
+  );
   return (
     <group>
-      <group ref={primary}>
-        <mesh>
-          <sphereGeometry args={[BINARY.primary.radius, 48, 32]} />
-          <shaderMaterial
-            ref={remember}
-            vertexShader={STAR_VERT}
-            fragmentShader={STAR_FRAG}
-            uniforms={{ uColor: { value: STAR_A }, uCamera: { value: new Vector3() }, uTime: { value: 0 } }}
-          />
-        </mesh>
-        <mesh scale={2.15}>
-          <sphereGeometry args={[BINARY.primary.radius, 32, 24]} />
-          <shaderMaterial
-            ref={remember}
-            transparent
-            depthWrite={false}
-            blending={AdditiveBlending}
-            vertexShader={STAR_VERT}
-            fragmentShader={CORONA_FRAG}
-            uniforms={{ uColor: { value: STAR_A }, uCamera: { value: new Vector3() } }}
-          />
-        </mesh>
-      </group>
-      <group ref={secondary}>
-        <mesh>
-          <sphereGeometry args={[BINARY.secondary.radius, 40, 28]} />
-          <shaderMaterial
-            ref={remember}
-            vertexShader={STAR_VERT}
-            fragmentShader={STAR_FRAG}
-            uniforms={{ uColor: { value: STAR_B }, uCamera: { value: new Vector3() }, uTime: { value: 0 } }}
-          />
-        </mesh>
-        <mesh scale={2.05}>
-          <sphereGeometry args={[BINARY.secondary.radius, 28, 20]} />
-          <shaderMaterial
-            ref={remember}
-            transparent
-            depthWrite={false}
-            blending={AdditiveBlending}
-            vertexShader={STAR_VERT}
-            fragmentShader={CORONA_FRAG}
-            uniforms={{ uColor: { value: STAR_B }, uCamera: { value: new Vector3() } }}
-          />
-        </mesh>
-      </group>
+      <group ref={primary}>{star(BINARY.primary.radius, materials.primary, STAR_A)}</group>
+      <group ref={secondary}>{star(BINARY.secondary.radius, materials.secondary, STAR_B)}</group>
     </group>
   );
 }
+
+type SurfaceMaps = {
+  earth: Texture;
+  clouds: Texture;
+  normal: Texture;
+  spec: Texture;
+  mars: Texture;
+  jupiter: Texture;
+  ring: Texture;
+};
 
 function PlanetBody({
   piece,
   index,
   quality,
+  maps,
   reduced,
   selected,
   onSelect,
@@ -349,6 +409,7 @@ function PlanetBody({
   piece: Piece;
   index: number;
   quality: Quality;
+  maps: SurfaceMaps;
   reduced: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
@@ -359,19 +420,13 @@ function PlanetBody({
   const spin = useRef<Group>(null);
   const { camera, gl } = useThree();
   const surface = useMemo(() => {
-    const fragment = kind === "ocean" ? OCEAN_FRAG : kind === "rocky" ? ROCKY_FRAG : GIANT_FRAG;
-    const displace = kind === "rocky" ? 0.085 : kind === "ocean" ? 0.035 : 0.012;
-    return makeLitMaterial(fragment, displace);
-  }, [kind]);
-  const clouds = useMemo(() => {
-    const material = makeLitMaterial(CLOUD_FRAG, 0);
-    material.transparent = true;
-    material.depthWrite = false;
-    material.blending = NormalBlending;
-    return material;
-  }, []);
+    if (kind === "ocean") return surfaceMaterial(maps.earth, maps.normal, maps.spec, maps.clouds);
+    if (kind === "rocky") return surfaceMaterial(maps.mars, null, null, null);
+    return surfaceMaterial(maps.jupiter, null, null, null);
+  }, [kind, maps]);
   const air = useMemo(() => {
-    const tint = kind === "ocean" ? new Color("#8fd6ff") : kind === "rocky" ? new Color("#e7b089") : new Color("#f2d7b0");
+    const tint = kind === "ocean" ? new Color("#9ecfff") : kind === "rocky" ? new Color("#c48962") : new Color("#e6c49a");
+    const gain = kind === "ocean" ? 0.5 : kind === "rocky" ? 0.2 : 0.28;
     return new ShaderMaterial({
       vertexShader: AIR_VERT,
       fragmentShader: AIR_FRAG,
@@ -379,11 +434,15 @@ function PlanetBody({
       depthWrite: false,
       blending: AdditiveBlending,
       side: BackSide,
-      uniforms: { uTint: { value: tint }, uCamera: { value: new Vector3() } },
+      uniforms: { uTint: { value: tint }, uGain: { value: gain }, uCamera: { value: new Vector3() } },
     });
   }, [kind]);
   const rings = useMemo(() => {
     if (kind !== "giant") return null;
+    const inner = radius * 1.32;
+    const outer = visualRadius(kind) * 0.98;
+    maps.ring.wrapS = ClampToEdgeWrapping;
+    maps.ring.wrapT = ClampToEdgeWrapping;
     return new ShaderMaterial({
       vertexShader: RING_VERT,
       fragmentShader: RING_FRAG,
@@ -395,18 +454,25 @@ function PlanetBody({
         uStarB: { value: new Vector3() },
         uColorA: { value: STAR_A },
         uColorB: { value: STAR_B },
+        uPlanet: { value: new Vector3() },
+        uInner: { value: inner },
+        uOuter: { value: outer },
+        uBody: { value: radius },
+        uRing: { value: maps.ring },
       },
     });
-  }, [kind]);
+  }, [kind, maps.ring]);
 
   useFrame((_, delta) => {
     const position = planetPosition(piece.id, index, sim.time);
     group.current?.position.set(position.x, position.y, position.z);
     if (!reduced && spin.current) spin.current.rotation.y += delta * (kind === "giant" ? 0.08 : 0.12);
     pushStars(surface, camera.position);
-    if (kind === "ocean") pushStars(clouds, camera.position);
     air.uniforms.uCamera.value.copy(camera.position);
-    if (rings) pushStars(rings, camera.position);
+    if (rings) {
+      pushStars(rings, camera.position);
+      rings.uniforms.uPlanet.value.set(position.x, position.y, position.z);
+    }
   });
 
   const sphere = useMemo(
@@ -418,14 +484,11 @@ function PlanetBody({
     <group ref={group}>
       <group ref={spin}>
         <mesh geometry={sphere} material={surface} scale={radius} />
-        {kind === "ocean" ? (
-          <mesh geometry={sphere} material={clouds} scale={radius * 1.035} />
-        ) : null}
-        <mesh geometry={sphere} material={air} scale={radius * 1.035} />
+        <mesh geometry={sphere} material={air} scale={radius * 1.02} />
       </group>
       {rings ? (
-        <mesh material={rings} rotation={[Math.PI / 2.4, 0.2, 0.15]}>
-          <ringGeometry args={[radius * 1.38, radius * 1.78, quality.ringSegments]} />
+        <mesh material={rings} rotation={[0.58, 0.22, 0.08]}>
+          <ringGeometry args={[radius * 1.32, visualRadius(kind) * 0.98, Math.max(quality.ringSegments, 128), 64]} />
         </mesh>
       ) : null}
       <mesh
@@ -490,6 +553,28 @@ export function Universe({
   onSelect: (id: string) => void;
 }) {
   const elapsed = useRef(0);
+  const loaded = useLoader(TextureLoader, [
+    earthDayUrl,
+    earthCloudsUrl,
+    earthNormalUrl,
+    earthSpecUrl,
+    marsUrl,
+    jupiterUrl,
+    sunUrl,
+    ringUrl,
+  ]);
+  const maps = useMemo(() => {
+    const [earth, clouds, normal, spec, mars, jupiter, sun, ring] = loaded;
+    prepareTexture(earth, true);
+    prepareTexture(clouds, true);
+    prepareTexture(normal, false);
+    prepareTexture(spec, false);
+    prepareTexture(mars, true);
+    prepareTexture(jupiter, true);
+    prepareTexture(sun, true);
+    prepareTexture(ring, true);
+    return { earth, clouds, normal, spec, mars, jupiter, sun, ring, glow: softGlowTexture() };
+  }, [loaded]);
   useFrame((_, delta) => {
     if (!reduced) elapsed.current += delta;
     sim.time = reduced ? 0 : elapsed.current;
@@ -499,9 +584,9 @@ export function Universe({
       <color attach="background" args={["#070910"]} />
       <Sky />
       <Starfield count={quality.stars} />
-      <Clusters count={quality.clusters} />
+      <Clusters />
       <Galaxies count={quality.galaxies} />
-      <Stars />
+      <Stars sun={maps.sun} glow={maps.glow} />
       {pieces.map((piece, index) => (
         <OrbitLine key={`${piece.id}-orbit`} id={piece.id} index={index} segments={quality.ringSegments} />
       ))}
@@ -511,6 +596,7 @@ export function Universe({
           piece={piece}
           index={index}
           quality={quality}
+          maps={maps}
           reduced={reduced}
           selected={piece.id === selectedId}
           onSelect={onSelect}
@@ -535,8 +621,10 @@ function Rig({
   const { camera, gl, size, invalidate } = useThree();
   const aspect = size.width / Math.max(size.height, 1);
   const initial = homeRadius(aspect);
-  const spherical = useRef({ radius: initial, phi: 1.02, theta: 0.62 });
-  const goal = useRef({ radius: initial, phi: 1.02, theta: 0.62 });
+  const opening = litOverviewTheta(0);
+  const spherical = useRef({ radius: initial, phi: 1.04, theta: opening });
+  const goal = useRef({ radius: initial, phi: 1.04, theta: opening });
+  const exploreGuided = useRef(true);
   const pivot = useRef(new Vector3());
   const goalPivot = useRef(new Vector3());
   const saved = useRef<{ radius: number; phi: number; theta: number } | null>(null);
@@ -578,6 +666,10 @@ function Rig({
       goal.current.radius = focusZoomed.current
         ? clamp(goal.current.radius, bound.min, bound.max)
         : bound.min;
+    }
+    if (!selectedRef.current && exploreGuided.current) {
+      goal.current.theta = litOverviewTheta(sim.time);
+      goal.current.phi = 1.04;
     }
     const current = spherical.current;
     const target = goal.current;
@@ -644,9 +736,10 @@ function Rig({
       focusZoomed.current = false;
       userAimed.current = false;
       goalPivot.current.set(0, 0, 0);
+      exploreGuided.current = true;
       target.radius = homeRadius(size.width / Math.max(size.height, 1));
-      target.phi = 1.02;
-      target.theta = 0.62;
+      target.phi = 1.04;
+      target.theta = litOverviewTheta(sim.time);
     } else if (command.type === "back") {
       goalPivot.current.set(0, 0, 0);
       focusZoomed.current = false;
@@ -657,11 +750,13 @@ function Rig({
         target.theta = saved.current.theta;
         saved.current = null;
       } else {
+        exploreGuided.current = true;
         target.radius = homeRadius(size.width / Math.max(size.height, 1));
-        target.phi = 1.02;
-        target.theta = 0.62;
+        target.phi = 1.04;
+        target.theta = litOverviewTheta(sim.time);
       }
     } else if (command.type === "left" || command.type === "right") {
+      if (!selectedRef.current) exploreGuided.current = false;
       target.theta += command.type === "left" ? 0.18 : -0.18;
     } else if (command.type === "up" || command.type === "down") {
       target.phi = clampPhi(target.phi + (command.type === "down" ? 0.1 : -0.1));
@@ -717,6 +812,7 @@ function Rig({
       goal.current.theta = spherical.current.theta;
       goal.current.phi = spherical.current.phi;
       if (selectedRef.current) userAimed.current = true;
+      else exploreGuided.current = false;
       invalidate();
     };
     const onUp = (event: PointerEvent) => {
