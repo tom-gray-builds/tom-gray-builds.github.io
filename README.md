@@ -248,3 +248,7 @@ regenerates the JSON-LD from the same source as the sheet.
 ```
 python3 -m http.server 4173
 ```
+
+## Universe preview (not the live site)
+
+`preview/` is an unreleased 3D redesign. GitHub Pages still serves this repository root — `index.html`, `privacy.html`, and `CNAME` — and that is unchanged. The preview reads `projects.json`, builds to a gitignored static folder, and is documented in `preview/README.md`, including the deployment steps that have deliberately not been taken.
