@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { formatPushed, panelModel, selectPieces } from "./content";
+import { LINKEDIN_URL } from "./links";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const raw = JSON.parse(readFileSync(join(root, "projects.json"), "utf8")) as {
@@ -18,6 +19,10 @@ const raw = JSON.parse(readFileSync(join(root, "projects.json"), "utf8")) as {
 
 describe("project content", () => {
   const pieces = selectPieces(raw);
+
+  it("opens Tom's LinkedIn profile and nothing else for the suns", () => {
+    expect(LINKEDIN_URL).toBe("https://www.linkedin.com/in/tom-gray-online/");
+  });
 
   it("represents each curated project once, in sheet order", () => {
     expect(pieces.map((piece) => piece.id)).toEqual(["smart-blinds", "fontloop", "avatars"]);

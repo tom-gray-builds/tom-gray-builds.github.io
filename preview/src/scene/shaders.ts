@@ -293,27 +293,31 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 view = normalize(uCamera - vWorld);
   vec3 p = normalize(vObj);
+  float t = uTime;
+  // Large, curling flow. A couple of seconds moves a patch across the disk
+  // even when the star is only a few dozen pixels wide.
   vec3 flow = vec3(
-    fbm(p * 1.7 + vec3(uTime * 0.033, uSeed, 0.4)),
-    fbm(p * 1.7 + vec3(2.2, uTime * 0.027, uSeed)),
-    fbm(p * 1.9 + vec3(uSeed * 0.5, 3.1, -uTime * 0.024))
+    fbm(p * 1.15 + vec3(t * 0.55, uSeed, 0.3)),
+    fbm(p * 1.15 + vec3(2.1, t * 0.47, uSeed)),
+    fbm(p * 1.35 + vec3(uSeed, 1.6, -t * 0.41))
   );
-  vec3 q = p + (flow - 0.5) * 0.62;
-  float gran = fbm(q * 8.0 + vec3(uTime * 0.045, uSeed, 0.0));
-  float fine = fbm(q * 20.0 + vec3(1.4, uTime * 0.07, uSeed));
-  float large = fbm(q * 3.1 + vec3(uTime * 0.011, 2.0, uSeed));
-  float spot = smoothstep(0.64, 0.8, fbm(q * 1.8 + vec3(uSeed * 2.0, 1.0, 0.0)));
-  vec3 cool = vec3(0.62, 0.12, 0.02);
-  vec3 mid = vec3(1.0, 0.48, 0.12);
-  vec3 hot = vec3(1.0, 0.9, 0.62);
-  vec3 col = mix(cool, mid, smoothstep(0.32, 0.66, gran));
-  col = mix(col, hot, smoothstep(0.5, 0.84, fine) * 0.62);
-  col = mix(col, col * 0.72 + hot * 0.4, smoothstep(0.45, 0.75, large) * 0.4);
-  col = mix(col, col * vec3(0.32, 0.16, 0.07), spot * 0.62);
+  vec3 q = p + (flow - 0.5) * 1.15;
+  float cells = fbm(q * 2.15 + vec3(t * 0.22, uSeed, 0.4));
+  float gran = fbm(q * 4.6 + vec3(t * 0.62, 1.3, uSeed));
+  float boil = fbm(vec3(q.xy * 7.0, t * 0.85 + uSeed));
+  vec3 cool = vec3(0.45, 0.07, 0.015);
+  vec3 mid = vec3(1.0, 0.42, 0.08);
+  vec3 hot = vec3(1.0, 0.86, 0.45);
+  vec3 col = mix(cool, mid, smoothstep(0.22, 0.72, cells));
+  col = mix(col, hot, smoothstep(0.38, 0.78, gran) * 0.85);
+  col = mix(col, cool * 0.65, smoothstep(0.62, 0.86, boil) * 0.35);
+  float facing = clamp(dot(n, view), 0.0, 1.0);
+  float edge = pow(1.0 - facing, 1.35);
+  col += vec3(1.0, 0.72, 0.28) * edge * (0.35 + boil * 0.9);
   float foot = 1.0 - smoothstep(0.0, 0.42, length(p - normalize(uFlareDir)));
-  col += vec3(1.0, 0.96, 0.75) * foot * uFlareAmt * 1.15;
-  float limb = pow(clamp(dot(n, view), 0.0, 1.0), 0.42);
-  col *= uColor * uRadiance * (0.3 + 0.7 * limb);
+  col += vec3(1.0, 0.78, 0.32) * foot * uFlareAmt;
+  float limb = pow(facing, 0.5);
+  col *= uColor * uRadiance * (0.62 + 0.38 * limb);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -329,8 +333,9 @@ ${NOISE}
 void main() {
   vUv = uv;
   vec3 p = position;
-  float swell = fbm(p * 2.4 + vec3(uSeed, uTime * 0.05, 0.2));
-  p += normal * (swell - 0.5) * 0.02;
+  float swell = fbm(p * 2.2 + vec3(uSeed, uTime * 0.28, 0.2));
+  float swell2 = fbm(p * 1.2 + vec3(uTime * 0.17, 3.0, uSeed));
+  p += normal * ((swell - 0.5) * 0.055 + (swell2 - 0.5) * 0.04);
   vObj = p;
   vec4 world = modelMatrix * vec4(p, 1.0);
   vWorld = world.xyz;

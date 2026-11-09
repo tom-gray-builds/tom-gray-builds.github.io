@@ -72,10 +72,12 @@ try {
   await pause(900);
   await page.screenshot({ path: `${outDir}/overview-desktop.png` });
 
-  const titles = await page.$$eval(".marker", (nodes) => nodes.map((node) => node.textContent?.trim()));
+  const titles = await page.$$eval("[id^='marker-']", (nodes) => nodes.map((node) => node.getAttribute("aria-label")));
   if (titles.join("|") !== "smart blinds|fontloop|avatars") {
     failures.push(`markers: ${titles.join("|")}`);
   }
+  const painted = await page.$eval("#marker-fontloop", (node) => getComputedStyle(node).backgroundColor);
+  if (painted !== "rgba(0, 0, 0, 0)") failures.push(`planet label still visible: ${painted}`);
 
   const canvas = await page.$("canvas");
   const box = await canvas.boundingBox();
@@ -88,6 +90,27 @@ try {
     await pause(200);
     const dialogAfterDrag = await page.$("[role=dialog]");
     if (dialogAfterDrag) failures.push("drag opened the panel");
+  }
+
+  const popupPromise = new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 5000);
+    page.once("popup", (popup) => {
+      clearTimeout(timer);
+      resolve(popup);
+    });
+  });
+  await page.focus("#sun-primary");
+  await page.keyboard.press("Enter");
+  const popup = await popupPromise;
+  if (!popup) failures.push("sun did not open a tab");
+  else {
+    await popup.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+    const opened = popup.url();
+    const profile = "https://www.linkedin.com/in/tom-gray-online";
+    const reached =
+      opened.startsWith(profile) || opened.includes(encodeURIComponent(profile));
+    if (!reached) failures.push(`sun opened ${opened}`);
+    await popup.close();
   }
 
   await openMarker("fontloop");

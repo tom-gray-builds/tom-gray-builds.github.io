@@ -2,6 +2,7 @@ import { Component, Suspense, useEffect, useMemo, useRef, useState, type CSSProp
 import { Canvas } from "@react-three/fiber";
 import { ACESFilmicToneMapping } from "three";
 import { pieces } from "./data/content";
+import { openLinkedIn } from "./data/links";
 import { accentFor } from "./scene/system";
 import { FOV_DEG } from "./scene/framing";
 import { detectQuality } from "./scene/quality";
@@ -167,21 +168,27 @@ export function App() {
               id={`marker-${piece.id}`}
               type="button"
               className="marker"
+              aria-label={piece.title}
               style={{ "--accent": accentFor(piece.id, index) } as CSSProperties}
               onClick={() => open(piece.id)}
             >
-              <span className="marker-dot" aria-hidden="true" />
-              {piece.title}
+              <span className="sr-only">{piece.title}</span>
             </button>
           ),
         )}
+        <button id="sun-primary" type="button" className="marker" aria-label="Tom Gray on LinkedIn" onClick={openLinkedIn}>
+          <span className="sr-only">Tom Gray on LinkedIn</span>
+        </button>
+        <button id="sun-secondary" type="button" className="marker" aria-label="Tom Gray on LinkedIn" onClick={openLinkedIn}>
+          <span className="sr-only">Tom Gray on LinkedIn</span>
+        </button>
       </div>
       <div className="stage">
         <SceneBoundary onError={() => setFailed(true)}>
           <Suspense fallback={null}>
           <Canvas
             dpr={[1, quality.dprMax]}
-            frameloop={reduced ? "demand" : "always"}
+            frameloop="always"
             camera={{ fov: FOV_DEG, near: 0.05, far: 1200, position: [0, 8, 28] }}
             gl={{
               antialias: quality.antialias,

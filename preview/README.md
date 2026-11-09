@@ -31,7 +31,7 @@ Drag orbits. Scroll or pinch zooms, inside a hard near and far limit. Click or t
 
 On a phone the scene is the same one. Quality drops (pixel ratio, segment counts, star count, environment resolution) when the pointer is coarse, the device is small, or there are few cores. It does not fall back to a list. A list is only rendered when WebGL cannot start, or JavaScript is off.
 
-Reduced motion snaps the camera and stops the slow spins.
+Reduced motion snaps the camera and stops the orbits and planet spins. The suns keep a slower surface motion, without flares.
 
 ## Public preview host
 
