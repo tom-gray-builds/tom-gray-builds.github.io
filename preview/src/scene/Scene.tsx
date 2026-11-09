@@ -21,6 +21,7 @@ import {
   type Group,
 } from "three";
 import type { Piece } from "../data/content";
+import { openLinkedIn } from "../data/links";
 import {
   clamp,
   clearEye,
@@ -382,12 +383,13 @@ function prominenceGeometry(radius: number) {
   return geometry;
 }
 
-function Stars({ glow }: { glow: ReturnType<typeof softGlowTexture> }) {
+function Stars({ glow, reduced }: { glow: ReturnType<typeof softGlowTexture>; reduced: boolean }) {
   const primary = useRef<Group>(null);
   const secondary = useRef<Group>(null);
   const loopA = useRef<Group>(null);
   const loopB = useRef<Group>(null);
   const up = useMemo(() => new Vector3(0, 1, 0), []);
+  const { gl } = useThree();
   const materials = useMemo(() => {
     const make = (color: Color, seed: number) =>
       new ShaderMaterial({
@@ -445,9 +447,9 @@ function Stars({ glow }: { glow: ReturnType<typeof softGlowTexture> }) {
       const at = starPosition(which, sim.time);
       group?.position.set(at.x, at.y, at.z);
       body.uniforms.uCamera.value.copy(camera.position);
-      body.uniforms.uTime.value = sim.time;
-      body.uniforms.uRadiance.value = stellarBrightness(seed, sim.time);
-      const flare = activeFlare(seed, sim.time);
+      body.uniforms.uTime.value = sim.sunTime;
+      body.uniforms.uRadiance.value = stellarBrightness(seed, sim.sunTime);
+      const flare = reduced ? null : activeFlare(seed, sim.time);
       const amount = flare ? flareEnvelope(sim.time, flare) * flare.strength : 0;
       const dir = flare ? flareDirection(flare) : { x: 0, y: 1, z: 0 };
       body.uniforms.uFlareAmt.value = amount;
@@ -467,11 +469,24 @@ function Stars({ glow }: { glow: ReturnType<typeof softGlowTexture> }) {
   });
   const star = (radius: number, material: ShaderMaterial, color: Color) => (
     <>
-      <mesh>
+      <mesh
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          gl.domElement.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          gl.domElement.style.cursor = "grab";
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (pointerGate.dragged) return;
+          openLinkedIn();
+        }}
+      >
         <sphereGeometry args={[radius, 72, 56]} />
         <primitive object={material} attach="material" />
       </mesh>
-      <sprite scale={[radius * 3.2, radius * 3.2, 1]}>
+      <sprite scale={[radius * 3.2, radius * 3.2, 1]} raycast={() => null}>
         <spriteMaterial
           map={glow}
           color={color}
@@ -488,12 +503,14 @@ function Stars({ glow }: { glow: ReturnType<typeof softGlowTexture> }) {
     <group>
       <group ref={primary}>
         {star(BINARY.primary.radius, materials.primary, STAR_A)}
+        <ScreenAnchor elementId="sun-primary" />
         <group ref={loopA}>
           <mesh geometry={arches.primary} material={materials.loopA} frustumCulled={false} />
         </group>
       </group>
       <group ref={secondary}>
         {star(BINARY.secondary.radius, materials.secondary, STAR_B)}
+        <ScreenAnchor elementId="sun-secondary" />
         <group ref={loopB}>
           <mesh geometry={arches.secondary} material={materials.loopB} frustumCulled={false} />
         </group>
@@ -642,18 +659,18 @@ function PlanetBody({
         <sphereGeometry args={[1, 16, 12]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </mesh>
-      <LabelAnchor id={piece.id} hidden={selected} lift={visualRadius(kind) + 0.15} />
+      <ScreenAnchor elementId={`marker-${piece.id}`} hidden={selected} />
     </group>
   );
 }
 
-function LabelAnchor({ id, hidden, lift }: { id: string; hidden: boolean; lift: number }) {
+function ScreenAnchor({ elementId, hidden = false }: { elementId: string; hidden?: boolean }) {
   const anchor = useRef<Group>(null);
   const { camera, size } = useThree();
   const point = useMemo(() => new Vector3(), []);
   useFrame(() => {
     const group = anchor.current;
-    const el = document.getElementById(`marker-${id}`);
+    const el = document.getElementById(elementId);
     if (!group || !el) return;
     if (hidden) {
       el.style.visibility = "hidden";
@@ -663,11 +680,10 @@ function LabelAnchor({ id, hidden, lift }: { id: string; hidden: boolean; lift: 
     point.project(camera);
     const x = (point.x * 0.5 + 0.5) * size.width;
     const y = (-point.y * 0.5 + 0.5) * size.height;
-    const nudge = size.width < 800 ? (id.length % 3 - 1) * 42 : 0;
-    el.style.transform = `translate3d(${x + nudge}px, ${y}px, 0) translate(-50%, -140%)`;
+    el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
     el.style.visibility = point.z > 1 ? "hidden" : "visible";
   });
-  return <group ref={anchor} position={[0, lift, 0]} />;
+  return <group ref={anchor} />;
 }
 
 function rockGeometry(seed: number, detail: number) {
@@ -769,10 +785,18 @@ export function Universe({
   onSelect: (id: string) => void;
 }) {
   const elapsed = useRef(0);
+  const sunClock = useRef(0);
   const glow = useMemo(() => softGlowTexture(), []);
   useFrame((_, delta) => {
-    if (!reduced) elapsed.current += delta;
-    sim.time = reduced ? 0 : elapsed.current;
+    if (!reduced) {
+      elapsed.current += delta;
+      sim.time = elapsed.current;
+      sim.sunTime = elapsed.current;
+    } else {
+      sunClock.current += delta * 0.2;
+      sim.time = 0;
+      sim.sunTime = sunClock.current;
+    }
   });
   return (
     <>
@@ -781,7 +805,7 @@ export function Universe({
       <Starfield count={quality.stars} />
       <Clusters />
       <Galaxies count={quality.galaxies} />
-      <Stars glow={glow} />
+      <Stars glow={glow} reduced={reduced} />
       <Belt count={quality.rocks} pieces={pieces} selectedId={selectedId} />
       {pieces.map((piece, index) => (
         <OrbitLine

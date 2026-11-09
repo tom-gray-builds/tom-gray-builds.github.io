@@ -199,4 +199,4 @@ export function sunlitAmount(planet: Vec3, eye: Vec3): number {
   return dot(toCamera, toSun);
 }
 
-export const sim = { time: 0 };
+export const sim = { time: 0, sunTime: 0 };
